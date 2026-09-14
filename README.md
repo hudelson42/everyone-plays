@@ -3,7 +3,7 @@
 A substitution and shift tracker for youth soccer coaches. One HTML file, no
 account, no signal required.
 
-**Use it here:** https://YOURNAME.github.io/sideline/
+**Use it here:** https://hudelson42.github.io/sideline/
 
 Add it to your home screen and it opens like an app.
 
