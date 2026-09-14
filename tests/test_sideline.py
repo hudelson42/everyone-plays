@@ -41,13 +41,15 @@ SEED = """([names, size, advanced]) => {
   S.settings.advanced = advanced;
   S.settings.teamSize = size;
   S.settings.formationIdx = 0;
+  S.settings.maxSwitch = null;
+  S.settings.freshPositions = true;
   S.game = newGame();
-  const bands = [];
-  BANDS.forEach(b => { for (let i = 0; i < slotsFor(b); i++) bands.push(b); });
+  const spots = [];
+  BANDS.forEach(b => { for (let i = 0; i < slotsFor(b); i++) spots.push([b, i]); });
   S.game.seq++;
-  bands.forEach((b, i) => S.game.log.push({
+  spots.forEach(([b, j], i) => S.game.log.push({
     eid: uid(), g: 1, t: Date.now(), gt: 0, sh: 1, period: 1,
-    type: 'ON', playerId: 'p' + i, band: b
+    type: 'ON', playerId: 'p' + i, band: b, pos: slotPos(b, j)
   }));
   invalidate(); render();
 }"""
@@ -59,6 +61,26 @@ ROSTER = ["Ava Chen", "Ben Ortiz", "Cole Park", "Dara Singh", "Eli Brooks",
 # the app's own invariant checker, reused here
 SELF_CHECK = "selfCheck().indexOf('FAIL') === -1"
 
+# replays the log checking nobody ever shares a position, and counts how many
+# different positions each outfield player has actually spent time in
+POSITION_STATS = """(() => {
+  const st = compute(), at = {};
+  let clashes = 0;
+  S.game.log.forEach((e, i) => {
+    if (e.type === 'ON' || e.type === 'MOVE') at[e.playerId] = e.pos;
+    else if (e.type === 'OFF') delete at[e.playerId];
+    const nx = S.game.log[i + 1];
+    if (!nx || nx.g !== e.g) {
+      const v = Object.values(at).filter(Boolean);
+      if (new Set(v).size !== v.length) clashes++;
+    }
+  });
+  const missing = S.game.log.filter(e => (e.type === 'ON' || e.type === 'MOVE') && !e.pos).length;
+  const per = S.roster.filter(p => p.id !== 'p0')
+    .map(p => Object.keys(st[p.id].pos).filter(c => st[p.id].pos[c] > 0).length);
+  return { clashes, missing, avg: +(per.reduce((a, b) => a + b, 0) / per.length).toFixed(2) };
+})()"""
+
 
 def run_shift(pg, at_seconds):
     """Advance the clock, auto-fill, and send the resulting shift on."""
@@ -69,6 +91,18 @@ def run_shift(pg, at_seconds):
         mv: e.filter(x => x.type === 'MOVE').length }; })()""")
     pg.evaluate("const e = planDiff(); beginNewShift(); push(e);")
     return diff
+
+
+def play_full_game(pg, fresh):
+    """Two 25-minute periods of 5-minute shifts, 13 players, 7 v 7."""
+    pg.evaluate(SEED, [ROSTER, 7, True])
+    pg.evaluate("S.settings.periods = 2; S.settings.periodLen = 25; "
+                f"S.settings.freshPositions = {str(fresh).lower()};")
+    for half in range(2):
+        for k in range(1, 6):
+            run_shift(pg, k * 300)
+        if half == 0:
+            pg.evaluate("S.game.base = 1500; endPeriodNow(); nextPeriod();")
 
 
 def main():
@@ -129,10 +163,10 @@ def main():
         # ---------------------------------------------------------------
         section("Rotation quality")
         pg.evaluate(SEED, [ROSTER[:8], 7, False])   # thin bench, the hard case
+        pg.evaluate("S.settings.maxSwitch = 2")
         churn = [run_shift(pg, k * 300)["mv"] for k in range(1, 6)]
-        cap = pg.evaluate("S.settings.maxSwitch == null ? 2 : S.settings.maxSwitch")
-        check("position switches stay under the cap", max(churn) <= cap,
-              f"per shift: {churn}, cap {cap}")
+        check("position switches stay under a cap when one is set", max(churn) <= 2,
+              f"per shift: {churn}, cap 2")
 
         keeper_changes = pg.evaluate("""(() => {
           let n = 0; S.game.log.forEach(e => {
@@ -141,14 +175,13 @@ def main():
         check("keeper is not rotated automatically", keeper_changes == 0,
               f"{keeper_changes} keeper changes")
 
-        # full game, two periods
-        pg.evaluate(SEED, [ROSTER, 7, True])
-        pg.evaluate("S.settings.periods = 2; S.settings.periodLen = 25;")
-        for half in range(2):
-            for k in range(1, 6):
-                run_shift(pg, k * 300)
-            if half == 0:
-                pg.evaluate("S.game.base = 1500; endPeriodNow(); nextPeriod();")
+        pg.evaluate(SEED, [ROSTER[:8], 7, False])   # SEED resets to no limit
+        unlimited = [run_shift(pg, k * 300)["mv"] for k in range(1, 6)]
+        check("with no limit, auto-fill still settles", pg.evaluate(SELF_CHECK),
+              f"per shift: {unlimited}")
+
+        # full game, two periods, default settings
+        play_full_game(pg, True)
         spread = pg.evaluate("""(() => { const st = compute();
           const out = S.roster.filter(p => p.id !== 'p0').map(p => st[p.id].total / 60);
           const both = S.roster.filter(p => p.id !== 'p0')
@@ -160,6 +193,64 @@ def main():
               f"{spread['lo']}–{spread['hi']} min across {spread['n']} outfield players")
         check("everyone plays both ends", spread["both"] == spread["n"],
               f"{spread['both']}/{spread['n']}")
+
+        # ---------------------------------------------------------------
+        section("Positions")
+        bad = pg.evaluate("""(() => { const out = [], was = [S.settings.teamSize, S.settings.formationIdx];
+          for (const k in FORMATIONS) FORMATIONS[k].forEach((f, idx) => {
+            S.settings.teamSize = +k; S.settings.formationIdx = idx;
+            const codes = BANDS.flatMap(b => posCodes(b, slotsFor(b)));
+            if (codes.length != k || new Set(codes).size != codes.length || codes.some(c => !POSNAME[c]))
+              out.push(k + ' ' + formName(f) + ': ' + codes.join(' '));
+          });
+          [S.settings.teamSize, S.settings.formationIdx] = was; return out; })()""")
+        check("every formation has distinct, named positions", not bad, "; ".join(bad))
+
+        play_full_game(pg, True)
+        fresh = pg.evaluate(POSITION_STATS)
+        check("every substitution records a specific position", fresh["missing"] == 0,
+              f"{fresh['missing']} without one")
+        check("no two players ever share a position", fresh["clashes"] == 0,
+              f"{fresh['clashes']} clashes")
+        play_full_game(pg, False)
+        plain = pg.evaluate(POSITION_STATS)
+        check("subs rotate into positions they haven't played", fresh["avg"] > plain["avg"],
+              f"{fresh['avg']} positions per player with it on, {plain['avg']} with it off")
+
+        pg.evaluate(SEED, [ROSTER, 7, True])
+        placed = pg.evaluate("""(() => {
+          const st = compute(), lay = fieldLayout(st);
+          const bench = S.roster.find(p => !st[p.id].onBand);
+          push([{type: 'OFF', playerId: lay.slots.DEF[1]}]);
+          doPlace(bench.id, 'DEF', 1);
+          const into = compute()[bench.id].onPos;
+          const ld = fieldLayout().slots.DEF[0], rd = fieldLayout().slots.DEF[2];
+          doPair(ld, rd);
+          const s2 = compute();
+          return { into, ld: s2[ld].onPos, rd: s2[rd].onPos }; })()""")
+        check("placing a player puts them in that exact position", placed["into"] == "SW",
+              str(placed["into"]))
+        check("swapping two defenders swaps their positions",
+              placed["ld"] == "RD" and placed["rd"] == "LD", f"{placed['ld']}, {placed['rd']}")
+        check("self-check passes after position moves", pg.evaluate(SELF_CHECK))
+
+        hold = pg.evaluate("""(() => {
+          const st = compute(); S.game.next = null; const n = ensureNext();
+          n.FWD[2] = S.roster.find(p => !st[p.id].onBand).id;
+          return planDiff().map(e => e.type + ':' + (e.pos || '')).sort(); })()""")
+        check("planning one position leaves everyone else where they stand",
+              hold == ["OFF:", "ON:RW"], str(hold))
+
+        pg.evaluate(SEED, [ROSTER, 7, True])
+        legacy = pg.evaluate("""(() => {
+          S.game.log.forEach(e => { delete e.pos; });
+          invalidate(); render();
+          const placed = BANDS.reduce((a, b) => a + fieldLayout().slots[b].filter(Boolean).length, 0);
+          S.game.base = 300; invalidate(); autoFillNext();
+          const e = planDiff(); beginNewShift(); push(e); render();
+          return { placed, ok: selfCheck().indexOf('FAIL') === -1 }; })()""")
+        check("games logged before positions existed still work",
+              legacy["placed"] == 7 and legacy["ok"], f"{legacy['placed']} placed")
 
         # ---------------------------------------------------------------
         section("Eligibility and availability")
@@ -220,7 +311,7 @@ def main():
         section("Lineups and check-in")
         pg.evaluate(SEED, [ROSTER, 7, True])
         pg.evaluate("S.lineups = []; saveLineup('Starting XI');")
-        saved = pg.evaluate("S.lineups.length ? Object.values(S.lineups[0].slots).flat().length : 0")
+        saved = pg.evaluate("S.lineups.length ? Object.values(S.lineups[0].slots).flat().filter(Boolean).length : 0")
         check("a lineup saves the whole field", saved == 7, f"{saved} players")
 
         pg.evaluate("S.game = newGame(); invalidate(); loadLineup(S.lineups[0].id);")
@@ -245,6 +336,25 @@ def main():
         pg.wait_for_timeout(300)
         out = pg.evaluate("S.roster.filter(p => p.avail !== 'available').length")
         check("check-in marks absentees", out == 1, f"{out} out")
+
+        # ---------------------------------------------------------------
+        section("Haptics")
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        pg.click('#tabs button[data-tab="field"]')
+        pg.wait_for_timeout(150)
+        buzz = pg.evaluate("""(() => {
+          const calls = [];
+          Object.defineProperty(navigator, 'vibrate', { value: p => { calls.push(p); return true; }, configurable: true });
+          const hold = () => { beginDrag(document.querySelector('#v-field [data-chip]'), 10, 10); dragEnd(); };
+          S.settings.vibrate = false; S.settings.dragBuzz = true; hold();
+          const on = calls.length;
+          S.settings.vibrate = true; S.settings.dragBuzz = false; hold();
+          const off = calls.length - on;
+          S.settings.vibrate = false; S.settings.dragBuzz = true;
+          return { on, off }; })()""")
+        check("press-and-hold buzz works with Vibrate off", buzz["on"] == 1, f"{buzz['on']} buzz")
+        check("press-and-hold buzz turns off on its own", buzz["off"] == 0, f"{buzz['off']} buzz")
+        pg.wait_for_timeout(300)
 
         # ---------------------------------------------------------------
         section("Layout")

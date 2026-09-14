@@ -169,6 +169,8 @@ body.sun .avn{color:#fff;border:1px solid #000}
 body.sun .chip .avn{color:#fff;border:1px solid #000}
 .chip .nm{font-size:11px;font-weight:600;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip .tm{font-size:10px;color:var(--ink-dim)}
+.chip .pc{font-size:9px;font-weight:700;letter-spacing:.04em;color:var(--ink-dim);line-height:1}
+body.sun .chip .pc{color:#000}
 .chip.sel{outline:3px solid var(--next);outline-offset:-1px}
 .chip.empty{border-style:dashed;color:var(--ink-dim);font-size:11px;justify-content:center}
 .chip.gkslot{border-color:var(--gk)}
@@ -354,6 +356,28 @@ const FORMATIONS = {
 };
 function formName(f){ return f.d+"-"+f.m+"-"+f.f+"-"+(f.gk?1:0); }
 
+/* Specific positions inside each band, left to right as drawn on the Field tab (attack at
+   the top). The code — LD, SW, ST — is what goes into the event log, so where a player
+   stood survives formation changes and shows up in History. Eligibility stays by band. */
+const POSDEF = {
+  GK:  {C:["GK","Goalie"]},
+  DEF: {L:["LD","Left D"],    LC:["LCD","Left center D"],   C:["SW","Sweeper"],    RC:["RCD","Right center D"],   R:["RD","Right D"]},
+  MID: {L:["LM","Left mid"],  LC:["LCM","Left center mid"], C:["CM","Center mid"], RC:["RCM","Right center mid"], R:["RM","Right mid"]},
+  FWD: {L:["LW","Left wing"], LC:["LS","Left striker"],     C:["ST","Striker"],    RC:["RS","Right striker"],     R:["RW","Right wing"]}
+};
+const SIDES = {1:["C"], 2:["L","R"], 3:["L","C","R"], 4:["L","LC","RC","R"], 5:["L","LC","C","RC","R"]};
+const POSNAME = {}, POSORDER = [];
+BANDS.forEach(b => ["L","LC","C","RC","R"].forEach(s => { const d = POSDEF[b][s]; if(d){ POSNAME[d[0]] = d[1]; POSORDER.push(d[0]); } }));
+function posCodes(band, n){
+  /* two forwards are a strike partnership, not two wingers */
+  const sides = band === "GK" ? (n ? ["C"] : []) : (band === "FWD" && n === 2) ? ["LC","RC"] : (SIDES[n] || []);
+  const out = sides.map(s => POSDEF[band][s][0]);
+  while(out.length < n) out.push(band + (out.length + 1));
+  return out;
+}
+function posName(code){ return !code ? "" : POSNAME[code] || (BANDNAME[code.replace(/\d+$/,"")] || code) + " " + code.replace(/^\D+/,""); }
+function slotPos(band, i){ return posCodes(band, slotsFor(band))[i] || null; }
+
 const KEY = "sideline-tracker-v1";
 let storageMode = "memory";
 const Store = {
@@ -380,8 +404,8 @@ const DEFAULTS = {
   v:1, roster:[],
   settings:{
     advanced:false, teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:5,
-    minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:6, rotate:true, confirmChanges:true, autoPlan:true,
-    warnLead:30, sound:false, vibrate:false, sun:false
+    minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:null /* no limit */, rotate:true, freshPositions:true,
+    confirmChanges:true, autoPlan:true, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false
   },
   game:newGame(), archive:[], lineups:[]
 };
@@ -439,21 +463,30 @@ function compute(){
 function _compute(){
   const now = gameElapsed();
   const st = {};
-  S.roster.forEach(p => st[p.id] = {GK:0,DEF:0,MID:0,FWD:0,total:0,onBand:null,onSince:null,lastOff:null,
-                                    n:{GK:0,DEF:0,MID:0,FWD:0}, nTotal:0,
+  S.roster.forEach(p => st[p.id] = {GK:0,DEF:0,MID:0,FWD:0,total:0,onBand:null,onPos:null,onSince:null,lastOff:null,
+                                    n:{GK:0,DEF:0,MID:0,FWD:0}, nTotal:0, pos:{}, np:{},
                                     goals:0, assists:0, saves:0, ga:0, yellows:0, reds:0, sinBinEnd:0, shots:0, sog:0});
   const open = {};
   const close = (pid,gt) => {
     const o = open[pid]; if(!o) return;
-    if(st[pid]) { st[pid][o.band] += Math.max(0, gt-o.start); st[pid].lastOff = gt; }
+    if(st[pid]) {
+      const d = Math.max(0, gt-o.start);
+      st[pid][o.band] += d; if(o.pos) st[pid].pos[o.pos] = (st[pid].pos[o.pos]||0) + d;
+      st[pid].lastOff = gt;
+    }
     delete open[pid];
   };
-  const enter = (pid, band) => { if(st[pid]){ st[pid].n[band]++; st[pid].nTotal++; } };
+  /* moving along the back line is a new position, but not a new trip into defense */
+  const enter = (pid, band, pos, was) => {
+    if(!st[pid]) return;
+    if(!was || was.band !== band){ st[pid].n[band]++; st[pid].nTotal++; }
+    if(pos && (!was || was.pos !== pos)) st[pid].np[pos] = (st[pid].np[pos]||0) + 1;
+  };
   
   for(const e of S.game.log){
-    if(e.type==="ON"){ close(e.playerId, e.gt); open[e.playerId] = {band:e.band, start:e.gt}; enter(e.playerId, e.band); }
+    if(e.type==="ON"){ close(e.playerId, e.gt); open[e.playerId] = {band:e.band, pos:e.pos||null, start:e.gt}; enter(e.playerId, e.band, e.pos, null); }
     else if(e.type==="OFF"){ close(e.playerId, e.gt); }
-    else if(e.type==="MOVE"){ close(e.playerId, e.gt); open[e.playerId] = {band:e.band, start:e.gt}; enter(e.playerId, e.band); }
+    else if(e.type==="MOVE"){ const was = open[e.playerId]; close(e.playerId, e.gt); open[e.playerId] = {band:e.band, pos:e.pos||null, start:e.gt}; enter(e.playerId, e.band, e.pos, was); }
     else if(e.type==="GOAL" && st[e.playerId]){ st[e.playerId].goals++; st[e.playerId].sog++; st[e.playerId].shots++; }
     else if(e.type==="SOG" && st[e.playerId]){ st[e.playerId].sog++; st[e.playerId].shots++; }
     else if(e.type==="SHOT" && st[e.playerId]){ st[e.playerId].shots++; }
@@ -465,8 +498,9 @@ function _compute(){
   }
   for(const pid in open){
     const o = open[pid]; if(!st[pid]) continue;
-    st[pid][o.band] += Math.max(0, now-o.start);
-    st[pid].onBand = o.band; st[pid].onSince = o.start; st[pid].lastOff = null;
+    const d = Math.max(0, now-o.start);
+    st[pid][o.band] += d; if(o.pos) st[pid].pos[o.pos] = (st[pid].pos[o.pos]||0) + d;
+    st[pid].onBand = o.band; st[pid].onPos = o.pos; st[pid].onSince = o.start; st[pid].lastOff = null;
   }
   const adj = S.game.adj||{};
   for(const pid in adj){ if(!st[pid]) continue; for(const b of BANDS) st[pid][b] += (adj[pid][b]||0); }
@@ -524,6 +558,32 @@ function eligible(p, band){ return !p || !p.elig || p.elig[band] !== false; }
 function eligList(p){ return BANDS.filter(b => eligible(p,b)); }
 function newElig(){ return {GK:true,DEF:true,MID:true,FWD:true}; }
 
+/* Who is standing in which slot, band by band. Position comes from the log. Anyone without
+   one (a game logged before positions existed), or whose position this formation doesn't
+   have, takes the first open slot in their band; anyone past the band's size is extra. */
+function fieldLayout(st){
+  st = st || compute();
+  const slots = {}, extra = {}, loose = [];
+  BANDS.forEach(b => { slots[b] = posCodes(b, slotsFor(b)).map(() => null); extra[b] = []; });
+  S.roster.forEach(p => {
+    const r = st[p.id]; if(!r || !r.onBand) return;
+    const i = r.onPos ? posCodes(r.onBand, slotsFor(r.onBand)).indexOf(r.onPos) : -1;
+    if(i >= 0 && !slots[r.onBand][i]) slots[r.onBand][i] = p.id; else loose.push(p.id);
+  });
+  loose.forEach(id => { const b = st[id].onBand, i = slots[b].indexOf(null); if(i >= 0) slots[b][i] = id; else extra[b].push(id); });
+  return {slots, extra};
+}
+function whereOn(pid, lay){
+  lay = lay || fieldLayout();
+  for(const b of BANDS){
+    const i = lay.slots[b].indexOf(pid);
+    if(i >= 0) return {band:b, i, code:slotPos(b, i)};
+    if(lay.extra[b].indexOf(pid) >= 0) return {band:b, i:-1, code:null};
+  }
+  return null;
+}
+function whereName(w){ return w ? posName(w.code) || BANDNAME[w.band] : ""; }
+
 /* ---------------- events ---------------- */
 function push(events, note){
   invalidate();
@@ -558,16 +618,17 @@ function maybeAutoPlan(){
   autoFillNext();
 }
 /* ---------------- saved lineups ---------------- */
+/* slots are saved by index, with gaps, so each player comes back in the same position */
 function currentArrangement(){
-  const st = compute(), out = {};
+  const lay = fieldLayout(), out = {};
   let any = false;
   BANDS.forEach(b => {
-    out[b] = S.roster.filter(p => st[p.id].onBand === b).map(p => p.id);
-    if(out[b].length) any = true;
+    out[b] = lay.slots[b].slice();
+    if(out[b].some(Boolean)) any = true;
   });
   if(!any){ /* nothing on the field — fall back to whatever is planned */
     const n = ensureNext(); let planned = false;
-    BANDS.forEach(b => { out[b] = n[b].filter(Boolean); if(out[b].length) planned = true; });
+    BANDS.forEach(b => { out[b] = n[b].slice(); if(out[b].some(Boolean)) planned = true; });
     if(!planned) return null;
   }
   return out;
@@ -591,10 +652,11 @@ function loadLineup(id){
   const n = ensureNext();
   let placed = 0, skipped = 0;
   BANDS.forEach(b => {
-    (L.slots[b] || []).forEach(pid => {
+    (L.slots[b] || []).forEach((pid, idx) => {
+      if(!pid) return;
       const p = byId(pid);
       if(!p || !available(p)){ if(p) skipped++; return; }
-      const i = n[b].indexOf(null);
+      const i = n[b][idx] === null ? idx : n[b].indexOf(null);
       if(i < 0){ skipped++; return; }
       n[b][i] = pid; placed++;
     });
@@ -643,15 +705,16 @@ function bestReplacement(band, excludeId){
 function pullPlayer(pid, reason){
   const st = compute(), band = st[pid].onBand;
   if(!band) return;
+  const w = whereOn(pid), pos = w ? w.code : null, where = whereName(w);
   push([{type:"OFF", playerId:pid}]);
   const sub = bestReplacement(band, pid);
   render();
   if(!sub){ toast(first(pid)+" off — nobody available to come on"); return; }
   modal(reason || "Player off",
-    '<div style="font-size:15px"><b>'+esc(first(pid))+'</b> is off at '+BANDNAME[band]+'.<br><br>'+
+    '<div style="font-size:15px"><b>'+esc(first(pid))+'</b> is off at '+esc(where)+'.<br><br>'+
     'Bring on <b>'+esc(sub.name)+'</b>? <span class="muted">('+fmt(st[sub.id].total)+' played — least of anyone available)</span></div>',
     "Bring "+first(sub.id)+" on",
-    ()=>{ push([{type:"ON", playerId:sub.id, band}]); render(); toast(first(sub.id)+" on at "+BANDNAME[band]); },
+    ()=>{ push([{type:"ON", playerId:sub.id, band, pos}]); render(); toast(first(sub.id)+" on at "+where); },
     "Leave the spot open");
 }
 function ensureNext(){
@@ -675,38 +738,47 @@ function planInto(pid, band, i){
   save();
 }
 function planClear(pid){ const was = nextSlotOf(pid); if(was){ S.game.next[was.band][was.i] = null; save(); } }
+/* An empty slot in the plan means whoever stands in that exact position now stays there.
+   Anyone whose position was planned over, and who isn't planned anywhere else, slides into
+   the next empty slot in the same band if there is one, and otherwise comes off. */
 function resolvePlan(){
-  const st = compute(), n = ensureNext(), planned = {}, out = {};
+  const lay = fieldLayout(), n = ensureNext(), planned = {}, out = {};
   BANDS.forEach(b => n[b].forEach(id => { if(id) planned[id] = 1; }));
   BANDS.forEach(b => {
-    const holding = S.roster.filter(p => st[p.id].onBand === b && !planned[p.id]).map(p => p.id);
-    out[b] = n[b].map(id => id || holding.shift() || null);
+    const staying = id => (id && !planned[id]) ? id : null;
+    out[b] = n[b].map((id, i) => id || staying(lay.slots[b][i]));
+    const spare = lay.slots[b].concat(lay.extra[b]).filter(id => staying(id) && out[b].indexOf(id) < 0);
+    out[b] = out[b].map(id => id || spare.shift() || null);
   });
   return out;
 }
 function planDiff(){
-  const st = compute(), res = resolvePlan(), keep = {}, ev = [];
-  BANDS.forEach(b => res[b].forEach(id => { if(id) keep[id] = b; }));
+  const st = compute(), lay = fieldLayout(st), res = resolvePlan(), keep = {}, ev = [];
+  BANDS.forEach(b => res[b].forEach((id, i) => { if(id) keep[id] = {band:b, pos:slotPos(b, i)}; }));
   S.roster.forEach(p => { if(st[p.id].onBand && !keep[p.id]) ev.push({type:"OFF", playerId:p.id}); });
   Object.keys(keep).forEach(id => {
-    const cur = st[id].onBand;
-    if(!cur) ev.push({type:"ON", playerId:id, band:keep[id]});
-    else if(cur !== keep[id]) ev.push({type:"MOVE", playerId:id, band:keep[id]});
+    const k = keep[id], cur = whereOn(id, lay);
+    if(!cur) ev.push({type:"ON", playerId:id, band:k.band, pos:k.pos});
+    else if(cur.band !== k.band || cur.code !== k.pos) ev.push({type:"MOVE", playerId:id, band:k.band, pos:k.pos});
   });
   return ev;
 }
 function autoFillNext(){
-  const st = compute(), n = ensureNext();
+  const st = compute(), lay = fieldLayout(st), n = ensureNext();
   BANDS.forEach(b => n[b] = n[b].map(()=>null));
   const now = gameElapsed();
 
   const slots = [];
-  BANDS.forEach(b => { for(let i=0;i<slotsFor(b);i++) slots.push({band:b, i}); });
+  BANDS.forEach(b => { for(let i=0;i<slotsFor(b);i++) slots.push({band:b, i, pos:slotPos(b, i)}); });
   const size = slots.length;
   if(!size){ save(); return; }
 
-  const onNow = {};
-  S.roster.forEach(p => { if(st[p.id].onBand) onNow[p.id] = st[p.id].onBand; });
+  /* onNow is the band each field player is in; cur is their exact slot, when they have one */
+  const onNow = {}, cur = {};
+  BANDS.forEach(b => {
+    lay.slots[b].forEach((id, i) => { if(id){ onNow[id] = b; cur[id] = slots.find(s => s.band === b && s.i === i); } });
+    lay.extra[b].forEach(id => { onNow[id] = b; });
+  });
 
   /* locked = must stay on: the keeper, and anyone who hasn't had their minimum stint */
   const locked = {};
@@ -730,27 +802,36 @@ function autoFillNext(){
   S.roster.filter(p => available(p) && !locked[p.id]).sort(byMinutes)
     .forEach(p => { if(squad.length < size) squad.push(p); });
 
-  /* B. assign positions, holding everyone who is already on the field where they are */
-  const free = slots.slice();
-  const take = band => { const k = free.findIndex(s => s.band === band); return k < 0 ? null : free.splice(k,1)[0]; };
-  const spot = {};
+  /* B. hold everyone already on the field in the exact position they're standing in */
+  const free = slots.slice(), spot = {};
+  const claim = s => { const k = free.indexOf(s); if(k < 0) return false; free.splice(k,1); return true; };
+  squad.forEach(p => {
+    const b = locked[p.id] || onNow[p.id], c = cur[p.id];
+    if(b && eligible(p,b) && c && c.band === b && claim(c)) spot[p.id] = c;
+  });
   squad.forEach(p => {
     const b = locked[p.id] || onNow[p.id];
-    if(b && eligible(p,b)){ const s = take(b); if(s) spot[p.id] = s; }
+    if(spot[p.id] || !b || !eligible(p,b)) return;
+    const s = free.find(x => x.band === b); if(s && claim(s)) spot[p.id] = s;
   });
-  /* whoever is left is coming off the bench — give them the position they've played least */
-  squad.filter(p => !spot[p.id]).forEach(p => {
-    const fits = free.filter(s => eligible(p, s.band));
-    const pick = (fits.length ? fits : free).slice().sort((a,b) => {
-      if(a.band === "GK" && b.band !== "GK") return 1;
-      if(b.band === "GK" && a.band !== "GK") return -1;
-      return st[p.id][a.band] - st[p.id][b.band];
-    })[0];
-    if(pick){ free.splice(free.indexOf(pick),1); spot[p.id] = pick; }
-  });
+  /* Whoever is left is coming off the bench. With freshPositions on they go to the open
+     position they've spent least time in — a kid who has only played left D gets right D or
+     striker. Off, it evens out by band only. Goal is last resort either way. Times are
+     bucketed to 30 s so a few seconds' difference doesn't override the next tiebreak. */
+  const fresh = S.settings.freshPositions !== false, q = sec => Math.round((sec||0)/30);
+  const cost = (p, s) => { const r = st[p.id];
+    return [eligible(p, s.band) ? 0 : 1, s.band === "GK" ? 1 : 0, fresh ? q(r.pos[s.pos]) : q(r[s.band]), fresh ? q(r[s.band]) : 0]; };
+  const better = (a, b) => { for(let k=0;k<a.length;k++) if(a[k] !== b[k]) return a[k] < b[k]; return false; };
+  const incoming = squad.filter(p => !spot[p.id]);
+  while(incoming.length && free.length){
+    let best = null;
+    incoming.forEach(p => free.forEach(s => { const c = cost(p, s); if(!best || better(c, best.c)) best = {p, s, c}; }));
+    claim(best.s); spot[best.p.id] = best.s; incoming.splice(incoming.indexOf(best.p), 1);
+  }
 
-  /* C. rotate front to back, but only a few players per shift */
-  let budget = S.settings.rotate ? (S.settings.maxSwitch == null ? 6 : S.settings.maxSwitch) : 0;
+  /* C. rotate front to back. maxSwitch null is no limit — every swap must even things out
+     by more than two minutes, so the total keeps falling and this still settles. */
+  let budget = S.settings.rotate ? (S.settings.maxSwitch == null ? Infinity : S.settings.maxSwitch) : 0;
   const held = () => squad.filter(p => onNow[p.id] && spot[p.id] && spot[p.id].band === onNow[p.id] && spot[p.id].band !== "GK");
   while(budget >= 2){
     let best = null;
@@ -974,27 +1055,26 @@ function paintTabs(){
 let selected = null; 
 
 function renderField(){
-  const st = compute(), f = formation(), onField = {};
-  BANDS.forEach(b => onField[b] = []);
-  S.roster.forEach(p => { if(st[p.id].onBand) onField[st[p.id].onBand].push(p); });
+  const st = compute(), lay = fieldLayout(st);
 
   const nextIds = nextUpIds(Math.max(2, Math.ceil(S.settings.teamSize/3))), order = ["FWD","MID","DEF","GK"];
   let widest = 1;
-  order.forEach(b => widest = Math.max(widest, slotsFor(b), onField[b].length));
+  order.forEach(b => widest = Math.max(widest, lay.slots[b].length + lay.extra[b].length));
   const inner = Math.max(240, (window.innerWidth || 390) - 44);
   const cw = Math.max(62, Math.min(108, Math.floor((inner - 6*(widest-1)) / widest)));
   const avs = Math.max(28, Math.min(56, Math.round(cw * 0.54)));
 
   let pitch = '<div id="pitch" style="--cw:'+cw+'px;--avs:'+avs+'px">';
   order.forEach(b => {
-    const slots = slotsFor(b); if(slots === 0 && onField[b].length === 0) return;
+    const codes = posCodes(b, slotsFor(b)), extra = lay.extra[b];
+    if(!codes.length && !extra.length) return;
     pitch += '<div class="band">';
-    for(let i=0;i<Math.max(slots, onField[b].length);i++){
-      const p = onField[b][i];
-      if(p) pitch += chip(p, st, b, "field");
-      else pitch += '<button class="chip empty '+(b==="GK"?"gkslot ":"")+((selected && selected.t==="s" && selected.band===b)?"sel":"")+'" data-slot="'+b+'">+ '+BANDNAME[b]+'</button>';
-    }
-    pitch += '</div><div class="bandlab">'+BANDNAME[b]+(slots?" · "+slots:"")+'</div>';
+    lay.slots[b].forEach((pid, i) => {
+      if(pid) pitch += chip(byId(pid), st, b, "field", false, codes[i]);
+      else pitch += '<button class="chip empty '+(b==="GK"?"gkslot ":"")+((selected && selected.t==="s" && selected.band===b && selected.i===i)?"sel":"")+'" data-slot="'+b+'|'+i+'">+ '+esc(posName(codes[i]))+'</button>';
+    });
+    extra.forEach(pid => { pitch += chip(byId(pid), st, b, "field", false, ""); });
+    pitch += '</div><div class="bandlab">'+BANDNAME[b]+(codes.length?" · "+codes.length:"")+'</div>';
   });
   pitch += '</div>';
 
@@ -1085,7 +1165,7 @@ function renderField(){
 }
 
 function pushEvent(pid, type, msg){ push([{type, playerId: pid}]); selected = null; render(); toast(msg); }
-function chip(p, st, band, kind, isNext){
+function chip(p, st, band, kind, isNext, pos){
   const r = st[p.id], sel = selected && selected.t === "p" && selected.id === p.id;
   const sinbin = isSinBin(p.id), stale = kind === "bench" && isStale(p.id);
   const unavail = (!available(p) && !sinbin) || p.avail !== "available";
@@ -1096,12 +1176,12 @@ function chip(p, st, band, kind, isNext){
   else if(stale) flag = '<span class="flag" style="color:var(--warn)">STALE</span>';
   return '<button class="chip'+(sel?" sel":"")+(band==="GK"?" gkslot":"")+(isNext?" next":"")+(stale?" stale":"")+(sinbin?" sinbin":"")+'"'+
     (unavail?' style="opacity:.42"':'')+ ' data-chip="'+p.id+'" data-kind="'+kind+'">'+ flag + avatar(p) +
-    '<span class="nm">'+esc(p.name.split(" ")[0])+'</span>'+
+    '<span class="nm">'+esc(p.name.split(" ")[0])+'</span>'+(pos ? '<span class="pc mono">'+esc(pos)+'</span>' : '')+
     '<span class="tm mono" data-live="'+p.id+'|'+(kind==="field"?"stint":"total")+'"></span></button>';
 }
 function selbar(st){
   if(selected.t === "s"){
-    return '<div class="selbar"><b>'+BANDNAME[selected.band]+'</b> spot is open — tap the player you want there.<div class="row" style="margin-top:8px"><button class="btn ghost" id="clear-sel">Clear</button></div></div>';
+    return '<div class="selbar"><b>'+esc(posName(slotPos(selected.band, selected.i)) || BANDNAME[selected.band])+'</b> spot is open — tap the player you want there.<div class="row" style="margin-top:8px"><button class="btn ghost" id="clear-sel">Clear</button></div></div>';
   }
   const p = byId(selected.id); if(!p) return "";
   const isField = !!st[p.id].onBand;
@@ -1132,62 +1212,66 @@ function confirmChange(text, run){
   modal("Make this change?", '<div style="font-size:15px">'+text+'</div>', "Do it", run);
 }
 function describePair(aId, bId){
-  const st = compute(), aOn = st[aId].onBand, bOn = st[bId].onBand;
-  if(aOn && bOn) return "Switch <b>"+esc(first(aId))+"</b> ("+BANDNAME[aOn]+") and <b>"+esc(first(bId))+"</b> ("+BANDNAME[bOn]+")";
-  if(!aOn && !bOn) return "Both are on the bench";
-  const inId = aOn ? bId : aId, outId = aOn ? aId : bId;
-  return "Bring <b>"+esc(first(inId))+"</b> on for <b>"+esc(first(outId))+"</b> at "+BANDNAME[st[outId].onBand];
+  const lay = fieldLayout(), wa = whereOn(aId, lay), wb = whereOn(bId, lay);
+  if(wa && wb) return "Switch <b>"+esc(first(aId))+"</b> ("+esc(whereName(wa))+") and <b>"+esc(first(bId))+"</b> ("+esc(whereName(wb))+")";
+  if(!wa && !wb) return "Both are on the bench";
+  const inId = wa ? bId : aId, outId = wa ? aId : bId;
+  return "Bring <b>"+esc(first(inId))+"</b> on for <b>"+esc(first(outId))+"</b> at "+esc(whereName(wa || wb));
 }
-function describePlace(pid, band){
-  const st = compute();
-  return (st[pid].onBand ? "Move <b>" : "Bring <b>")+esc(first(pid))+"</b> "+
-         (st[pid].onBand ? "from "+BANDNAME[st[pid].onBand]+" to " : "on at ")+BANDNAME[band];
+function describePlace(pid, band, i){
+  const w = whereOn(pid), to = esc(posName(slotPos(band, i)) || BANDNAME[band]);
+  return w ? "Move <b>"+esc(first(pid))+"</b> from "+esc(whereName(w))+" to "+to
+           : "Bring <b>"+esc(first(pid))+"</b> on at "+to;
 }
 
-function doPlace(pid, band){
-  const st = compute(), p = byId(pid);
-  if(st[pid].onBand === band){ toast(first(pid)+" is already at "+BANDNAME[band]); return; }
-  if(st[pid].onBand){ push([{type:"MOVE", playerId:pid, band}]); }
+/* Every change lands in one exact position — the open slot, or the spot of the player you
+   dropped onto — so the log always says left D, never just "defense". */
+function doPlace(pid, band, i){
+  const p = byId(pid), lay = fieldLayout(), pos = slotPos(band, i);
+  if(!pos){ toast("That spot isn't in this formation"); return; }
+  const there = lay.slots[band][i];
+  if(there === pid){ toast(first(pid)+" is already at "+posName(pos)); return; }
+  if(there){ doPair(pid, there); return; }
+  if(whereOn(pid, lay)){ push([{type:"MOVE", playerId:pid, band, pos}]); }
   else {
     if(!available(p)){ toast(first(pid)+" is unavailable/in Sin Bin"); return; }
-    push([{type:"ON", playerId:pid, band}]);
+    push([{type:"ON", playerId:pid, band, pos}]);
   }
-  toast(eligible(p, band) ? first(pid)+" → "+BANDNAME[band] : first(pid)+" isn't listed for "+BANDNAME[band]+" — placed anyway");
+  toast(eligible(p, band) ? first(pid)+" → "+posName(pos) : first(pid)+" isn't listed for "+BANDNAME[band]+" — placed at "+posName(pos)+" anyway");
 }
 function doPair(aId, bId){
   if(aId === bId) return;
-  const st = compute(), aOn = !!st[aId].onBand, bOn = !!st[bId].onBand;
-  if(aOn && bOn){
-    const ba = st[aId].onBand, bb = st[bId].onBand;
-    if(ba === bb){ toast("Both are already at "+BANDNAME[ba]); return; }
-    push([{type:"MOVE", playerId:aId, band:bb},{type:"MOVE", playerId:bId, band:ba}]);
-    toast(first(aId)+" and "+first(bId)+" switched");
-  } else if(!aOn && !bOn){
+  const lay = fieldLayout(), wa = whereOn(aId, lay), wb = whereOn(bId, lay);
+  if(wa && wb){
+    if(wa.band === wb.band && wa.code === wb.code){ toast("Both are already at "+whereName(wa)); return; }
+    push([{type:"MOVE", playerId:aId, band:wb.band, pos:wb.code},{type:"MOVE", playerId:bId, band:wa.band, pos:wa.code}]);
+    toast(first(aId)+" → "+whereName(wb)+", "+first(bId)+" → "+whereName(wa));
+  } else if(!wa && !wb){
     toast("Drag onto the field, not onto another bench player");
   } else {
-    const incoming = aOn ? bId : aId, outgoing = aOn ? aId : bId;
+    const incoming = wa ? bId : aId, outgoing = wa ? aId : bId, w = wa || wb;
     if(!available(byId(incoming))){ toast(first(incoming)+" is unavailable/in Sin Bin"); return; }
-    const band = st[outgoing].onBand;
-    push([{type:"OFF", playerId:outgoing},{type:"ON", playerId:incoming, band}]);
-    toast(eligible(byId(incoming), band) ? first(incoming)+" on for "+first(outgoing) : first(incoming)+" on for "+first(outgoing)+" — not their usual spot");
+    push([{type:"OFF", playerId:outgoing},{type:"ON", playerId:incoming, band:w.band, pos:w.code}]);
+    toast(first(incoming)+" on for "+first(outgoing)+" at "+whereName(w)+(eligible(byId(incoming), w.band) ? "" : " — not their usual spot"));
   }
 }
 function tapChip(id, kind){
   if(!selected){ selected = {t:"p", id, kind}; render(); return; }
-  if(selected.t === "s"){ doPlace(id, selected.band); selected = null; render(); return; }
+  if(selected.t === "s"){ doPlace(id, selected.band, selected.i); selected = null; render(); return; }
   if(selected.id === id){ selected = null; render(); return; }
   
   const aId = selected.id;
   confirmChange(describePair(aId, id), ()=>{ doPair(aId, id); render(); });
   selected = null; render();
 }
-function tapSlot(band){
+function tapSlot(key){
+  const [band, iStr] = key.split("|"), i = parseInt(iStr);
   if(selected && selected.t === "p"){
     const pid = selected.id;
-    confirmChange(describePlace(pid, band), ()=>{ doPlace(pid, band); render(); });
+    confirmChange(describePlace(pid, band, i), ()=>{ doPlace(pid, band, i); render(); });
     selected = null; render(); return;
   }
-  selected = (selected && selected.t === "s" && selected.band === band) ? null : {t:"s", band};
+  selected = (selected && selected.t === "s" && selected.band === band && selected.i === i) ? null : {t:"s", band, i};
   render();
 }
 
@@ -1206,7 +1290,8 @@ function armDrag(el){
 }
 function beginDrag(el, x, y){
   const id = el.dataset.chip; if(!id) return;
-  if(S.settings.vibrate && navigator.vibrate) navigator.vibrate(14);
+  /* its own setting — a coach can want this nudge with the shift-end vibration off */
+  if(S.settings.dragBuzz !== false && navigator.vibrate) navigator.vibrate(14);
   const r = el.getBoundingClientRect(), ghost = el.cloneNode(true);
   ghost.id = "ghost"; ghost.classList.remove("sel");
   ghost.style.width = r.width+"px"; ghost.style.minHeight = r.height+"px";
@@ -1256,7 +1341,7 @@ function dragEnd(){
       /* dragging is deliberate — it commits straight away. Tapping is easy to do by
          accident, so that path asks first. */
       if(t.id === "benchzone"){ if(compute()[id].onBand){ push([{type:"OFF", playerId:id}]); toast(first(id)+" off"); } }
-      else if(t.dataset.slot) doPlace(id, t.dataset.slot);
+      else if(t.dataset.slot){ const [band, i] = t.dataset.slot.split("|"); doPlace(id, band, parseInt(i)); }
       else if(t.dataset.chip) doPair(id, t.dataset.chip);
       selected = null;
     }
@@ -1269,7 +1354,7 @@ function dragEnd(){
    ============================================================ */
 let nextSel = null;
 function renderNext(){
-  const st = compute(), n = ensureNext(), res = resolvePlan();
+  const st = compute(), n = ensureNext(), res = resolvePlan(), lay = fieldLayout(st);
   const placed = nextCount(), ev = planDiff();
   const comingOn = ev.filter(e => e.type === "ON").length, comingOff = ev.filter(e => e.type === "OFF").length, moving = ev.filter(e => e.type === "MOVE").length;
 
@@ -1285,10 +1370,14 @@ function renderNext(){
     pitch += '<div class="band">';
     n[b].forEach((pid, i) => {
       if(pid) pitch += planChip(byId(pid), st, b, i, false);
-      else if(res[b][i]) pitch += planChip(byId(res[b][i]), st, b, i, true);
+      else if(res[b][i]){
+        /* holding, but slid over from a spot someone else was planned into */
+        const w = whereOn(res[b][i], lay);
+        pitch += planChip(byId(res[b][i]), st, b, i, (w && w.band === b && w.i === i) ? true : "moves");
+      }
       else {
         const on = nextSel && nextSel.t==="s" && nextSel.band===b && nextSel.i===i;
-        pitch += '<button class="chip empty'+(b==="GK"?" gkslot":"")+(on?" sel":"")+'" data-nslot="'+b+'|'+i+'">+ '+BANDNAME[b]+'</button>';
+        pitch += '<button class="chip empty'+(b==="GK"?" gkslot":"")+(on?" sel":"")+'" data-nslot="'+b+'|'+i+'">+ '+esc(posName(slotPos(b, i)))+'</button>';
       }
     });
     pitch += '</div><div class="bandlab">'+BANDNAME[b]+' · '+slotsFor(b)+'</div>';
@@ -1340,7 +1429,7 @@ function openLineups(){
     return;
   }
   const body = '<div class="lulist">'+ S.lineups.map(L => {
-    const n = BANDS.map(b => (L.slots[b]||[]).length).reduce((a,c)=>a+c,0);
+    const n = BANDS.map(b => (L.slots[b]||[]).filter(Boolean).length).reduce((a,c)=>a+c,0);
     return '<button data-lu="'+L.id+'"><b>'+esc(L.name)+'</b>'+
       '<span class="muted">'+n+' players · '+L.size+'v'+L.size+'</span>'+
       '<span class="muted" style="flex:none">Load</span></button>'+
@@ -1355,11 +1444,12 @@ function openLineups(){
   }));
 }
 function planChip(p, st, band, i, holding){
-  if(!p) return '<button class="chip empty" data-nslot="'+band+'|'+i+'">+ '+BANDNAME[band]+'</button>';
+  const code = slotPos(band, i) || "";
+  if(!p) return '<button class="chip empty" data-nslot="'+band+'|'+i+'">+ '+esc(posName(code))+'</button>';
   const r = st[p.id];
   return '<button class="chip'+((nextSel&&nextSel.t==="p"&&nextSel.id===p.id)?" sel":"")+(band==="GK"?" gkslot":"")+(holding?" holding":"")+'" data-chip="'+p.id+'" data-kind="plan" data-nslot="'+band+'|'+i+'">'+
-    (holding ? '<span class="flag" style="color:var(--ink-dim)">STAYS</span>' : (r.onBand ? '' : '<span class="flag" style="color:var(--next)">IN</span>'))+
-    avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="tm mono">'+fmt(r.total)+'</span></button>';
+    (holding === true ? '<span class="flag" style="color:var(--ink-dim)">STAYS</span>' : holding ? '<span class="flag">MOVES</span>' : (r.onBand ? '' : '<span class="flag" style="color:var(--next)">IN</span>'))+
+    avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span>'+(code ? '<span class="pc mono">'+esc(code)+'</span>' : '')+'<span class="tm mono">'+fmt(r.total)+'</span></button>';
 }
 function tapNextChip(pid){
   if(!nextSel){ nextSel = {t:"p", id:pid}; render(); return; }
@@ -1386,11 +1476,13 @@ function tapNextSlot(key){
 function sendNextShift(){
   const ev = planDiff();
   if(!ev.length){ toast("That plan matches who is already on"); return; }
-  const st = compute(), lines = ev.map(e => {
+  const st = compute(), lay = fieldLayout(st), lines = ev.map(e => {
     const nm = esc(byId(e.playerId).name);
-    if(e.type === "ON") return '<div class="stage"><b class="in">ON</b> &nbsp;'+nm+' at '+BANDNAME[e.band]+'</div>';
     if(e.type === "OFF") return '<div class="stage"><b class="out2">OFF</b> &nbsp;'+nm+' <span class="muted">('+fmt(st[e.playerId].total)+' played)</span></div>';
-    return '<div class="stage">'+nm+' switches to '+BANDNAME[e.band]+'</div>';
+    const to = esc(posName(e.pos) || BANDNAME[e.band]);
+    if(e.type === "ON") return '<div class="stage"><b class="in">ON</b> &nbsp;'+nm+' at '+to+'</div>';
+    const w = whereOn(e.playerId, lay);
+    return '<div class="stage">'+nm+' switches '+(w ? 'from '+esc(whereName(w))+' ' : '')+'to '+to+'</div>';
   }).join("");
   modal("Send on shift "+(S.game.shift+1), lines, "Make these changes", ()=>{ beginNewShift(); push(ev); nextSel = null; activeTab = "field"; render(); toast("Shift "+S.game.shift+" is on"); });
 }
@@ -1423,7 +1515,7 @@ function archiveGame(){
   const st = compute(), sc = computeMatchScore();
   S.archive.unshift({
     at: Date.now(), periods: S.game.period, score: sc,
-    totals: S.roster.map(p => ({name:p.name, number:p.number, GK:Math.round(st[p.id].GK), DEF:Math.round(st[p.id].DEF), MID:Math.round(st[p.id].MID), FWD:Math.round(st[p.id].FWD), total:Math.round(st[p.id].total)})),
+    totals: S.roster.map(p => ({name:p.name, number:p.number, GK:Math.round(st[p.id].GK), DEF:Math.round(st[p.id].DEF), MID:Math.round(st[p.id].MID), FWD:Math.round(st[p.id].FWD), total:Math.round(st[p.id].total), pos:posSummary(st[p.id], ", ")})),
     log: S.game.log.slice()
   });
   S.archive = S.archive.slice(0,12);
@@ -1442,13 +1534,13 @@ function renderTimes(){
   const th = (k,l) => '<th class="sortable'+(sortKey===k?" sorted":"")+'" data-sort="'+k+'">'+l+'</th>';
   const body = rows.map(p => {
     const r = st[p.id];
-    return '<tr class="'+(r.onBand?"onfield":"")+(available(p)?"":" off")+'"><td><div class="pname"><div class="pnum" style="background:'+colorOf(p.number)+'">'+esc(p.number||"–")+'</div><b>'+esc(p.name)+'</b></div></td>'+
+    return '<tr class="'+(r.onBand?"onfield":"")+(available(p)?"":" off")+'"><td><button class="pname" data-posinfo="'+p.id+'" style="width:100%;height:50px;font:inherit;color:inherit;text-align:left"><div class="pnum" style="background:'+colorOf(p.number)+'">'+esc(p.number||"–")+'</div><b>'+esc(p.name)+'</b></button></td>'+
       BANDS.map(b => '<td class="t"><button data-edit="'+p.id+'|'+b+'"><span class="mono" data-live="'+p.id+'|'+b+'">0:00</span><span class="cnt" data-livec="'+p.id+'|'+b+'"></span></button></td>').join("")+
       '<td class="t"><div class="tot"><span class="mono" data-live="'+p.id+'|total">0:00</span><span class="cnt" data-livec="'+p.id+'|total"></span></div></td></tr>';
   }).join("");
 
   document.getElementById("v-times").innerHTML =
-    (S.roster.length ? '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1"><col class="ct"><col class="ct"><col class="ct"><col class="ct"><col class="ctot"></colgroup><thead><tr>'+th("name","Player")+th("GK","GK")+th("DEF","DEF")+th("MID","MID")+th("FWD","FWD")+th("total","Total")+'</tr></thead><tbody>'+body+'</tbody></table><div class="muted" style="padding:8px 2px">Each cell shows time played and, below it, how many times they went into that spot. Tap a time to correct it. Green names are on the field.</div></div><div class="row"><button class="btn" id="x-csv">Save CSV</button>'+(navigator.share ? '<button class="btn" id="x-share">Share summary</button>' : '')+'<button class="btn ghost" id="x-text">Copy</button></div>' : '<div class="card">No players yet. Add your team on the Roster tab.</div>');
+    (S.roster.length ? '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1"><col class="ct"><col class="ct"><col class="ct"><col class="ct"><col class="ctot"></colgroup><thead><tr>'+th("name","Player")+th("GK","GK")+th("DEF","DEF")+th("MID","MID")+th("FWD","FWD")+th("total","Total")+'</tr></thead><tbody>'+body+'</tbody></table><div class="muted" style="padding:8px 2px">Each cell shows time played and, below it, how many times they went into that spot. Tap a time to correct it, or a name to see which positions they have played. Green names are on the field.</div></div><div class="row"><button class="btn" id="x-csv">Save CSV</button>'+(navigator.share ? '<button class="btn" id="x-share">Share summary</button>' : '')+'<button class="btn ghost" id="x-text">Copy</button></div>' : '<div class="card">No players yet. Add your team on the Roster tab.</div>');
 
   document.querySelectorAll("#v-times th.sortable").forEach(el => el.addEventListener("click", ()=>{
     const k = el.dataset.sort; if(k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = (k==="name"||k==="number") ? 1 : -1; } render();
@@ -1460,17 +1552,30 @@ function renderTimes(){
         S.game.adj[pid] = S.game.adj[pid] || {}; S.game.adj[pid][band] = (S.game.adj[pid][band]||0) + (v*60 - cur); save(); render();
       });
   }));
+  document.querySelectorAll("#v-times [data-posinfo]").forEach(el => el.addEventListener("click", ()=>showPositions(el.dataset.posinfo)));
   const xt = document.getElementById("x-text"); if(xt) xt.addEventListener("click", ()=>copyOut(summaryText()));
   const xc = document.getElementById("x-csv"); if(xc) xc.addEventListener("click", ()=>saveFile("playing-time-"+stamp()+".csv", summaryCSV(), "text/csv"));
   const xs = document.getElementById("x-share"); if(xs) xs.addEventListener("click", ()=>shareFile("playing-time-"+stamp()+".txt", summaryText(), "text/plain", "Playing time"));
 }
+/* The band columns say a player got time in defense; this says whether it was all at left D. */
+function showPositions(pid){
+  const p = byId(pid), r = compute()[pid]; if(!p || !r) return;
+  const played = POSORDER.concat(Object.keys(r.pos).filter(c => POSORDER.indexOf(c) < 0)).filter(c => r.pos[c] > 0);
+  const never = BANDS.flatMap(b => posCodes(b, slotsFor(b))).filter(c => !(r.pos[c] > 0));
+  const body = (played.length
+      ? played.map(c => '<div class="stage"><b>'+esc(posName(c))+'</b> <span class="muted">'+esc(c)+'</span> — '+mins(r.pos[c])+' min'+(r.np[c] ? ' <span class="muted">×'+r.np[c]+'</span>' : '')+'</div>').join("")
+      : '<div class="muted">No time in a specific position yet.</div>')+
+    (never.length ? '<div class="stage muted">Not played yet in this formation: '+never.map(c => esc(posName(c))).join(", ")+'</div>' : '');
+  modal(p.name, body, null, null, "Close");
+}
+function posSummary(r, sep){ return POSORDER.filter(k => r.pos && r.pos[k] > 0).map(k => k+" "+mins(r.pos[k])).join(sep); }
 function summaryText(){
   const st = compute(), rows = S.roster.slice().sort((a,b)=>st[b.id].total-st[a.id].total);
-  return "Playing time — " + new Date().toLocaleDateString() + "\n" + rows.map(p => { const r = st[p.id]; return "#"+(p.number||"–")+" "+p.name+" — "+mins(r.total)+" min  (GK "+mins(r.GK)+", D "+mins(r.DEF)+", M "+mins(r.MID)+", F "+mins(r.FWD)+")"; }).join("\n");
+  return "Playing time — " + new Date().toLocaleDateString() + "\n" + rows.map(p => { const r = st[p.id]; return "#"+(p.number||"–")+" "+p.name+" — "+mins(r.total)+" min  (GK "+mins(r.GK)+", D "+mins(r.DEF)+", M "+mins(r.MID)+", F "+mins(r.FWD)+")"+(posSummary(r, ", ") ? "  · "+posSummary(r, ", ") : ""); }).join("\n");
 }
 function summaryCSV(){
   const st = compute();
-  return "Name,Number,GK,Defense,Midfield,Forward,Total\n" + S.roster.map(p => { const r = st[p.id]; return '"'+p.name.replace(/"/g,'""')+'",'+(p.number||"")+","+mins(r.GK)+","+mins(r.DEF)+","+mins(r.MID)+","+mins(r.FWD)+","+mins(r.total); }).join("\n");
+  return "Name,Number,GK,Defense,Midfield,Forward,Total,Positions\n" + S.roster.map(p => { const r = st[p.id]; return '"'+p.name.replace(/"/g,'""')+'",'+(p.number||"")+","+mins(r.GK)+","+mins(r.DEF)+","+mins(r.MID)+","+mins(r.FWD)+","+mins(r.total)+',"'+posSummary(r, "; ")+'"'; }).join("\n");
 }
 function stamp(){ const d = new Date(), pad = n => String(n).padStart(2,"0"); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes()); }
 function backupName(){ return "sideline-backup-"+stamp()+".json"; }
@@ -1553,7 +1658,7 @@ function renderLog(){
     const open = {};
     for(let i=0;i<idx;i++){
       const e = log[i];
-      if(e.type==="ON"||e.type==="MOVE") open[e.playerId] = e.band;
+      if(e.type==="ON"||e.type==="MOVE") open[e.playerId] = {band:e.band, pos:e.pos||null};
       else if(e.type==="OFF") delete open[e.playerId];
     }
     return open;
@@ -1587,9 +1692,11 @@ function renderLog(){
     const dur = Math.max(0, endGt - first.gt);
 
     const rows = BANDS.map(b => {
-      const who = Object.keys(line).filter(id => line[id] === b);
+      const rank = id => { const k = POSORDER.indexOf(line[id].pos); return k < 0 ? 99 : k; };
+      const who = Object.keys(line).filter(id => line[id].band === b).sort((x, y) => rank(x) - rank(y));
       if(!who.length) return "";
-      return '<div class="lrow"><span class="lpos">'+BANDNAME[b]+'</span><span class="lwho">'+who.map(nameOf).join(", ")+'</span></div>';
+      return '<div class="lrow"><span class="lpos">'+BANDNAME[b]+'</span><span class="lwho">'+
+        who.map(id => nameOf(id)+(line[id].pos ? ' <span class="muted">'+esc(line[id].pos)+'</span>' : '')).join(", ")+'</span></div>';
     }).join("");
 
     const evNodes = events.map(e => {
@@ -1650,7 +1757,7 @@ function renderLog(){
   }));
   document.querySelectorAll("#v-log [data-arch]").forEach(el => el.addEventListener("click", ()=>{
     const a = S.archive[el.dataset.arch];
-    const body = a.totals.slice().sort((x,y)=>y.total-x.total).map(t => '<div class="stage">#'+esc(t.number||"–")+' '+esc(t.name)+' — <b>'+mins(t.total)+'</b> min <span class="muted">(GK '+mins(t.GK)+' · D '+mins(t.DEF)+' · M '+mins(t.MID)+' · F '+mins(t.FWD)+')</span></div>').join("");
+    const body = a.totals.slice().sort((x,y)=>y.total-x.total).map(t => '<div class="stage">#'+esc(t.number||"–")+' '+esc(t.name)+' — <b>'+mins(t.total)+'</b> min <span class="muted">(GK '+mins(t.GK)+' · D '+mins(t.DEF)+' · M '+mins(t.MID)+' · F '+mins(t.FWD)+')'+(t.pos ? ' · '+esc(t.pos) : '')+'</span></div>').join("");
     modal(new Date(a.at).toLocaleDateString(), body, null, null, "Close");
   }));
   document.getElementById("l-undo").addEventListener("click", undoLast);
@@ -1666,7 +1773,7 @@ function renderRoster(){
   const st = compute(), list = S.roster.length ? S.roster.map(p => {
     const open = openPlayer === p.id, el = eligList(p), isAvail = available(p) || p.avail === "available";
     const quickBtn = '<button class="btn '+(isAvail?'ghost':'warn')+'" style="padding:0 10px;min-height:32px;height:32px;font-size:11px;margin-right:4px;" data-quick-avail="'+p.id+'">'+(isAvail?'Here':'Out')+'</button>';
-    const head = '<div class="prow'+(open?" open":"")+'" data-open="'+p.id+'">'+ avatar(p) + '<div class="meta"><b>'+esc(p.name)+'</b><div class="status'+(isAvail?"":" out")+'">#'+esc(p.number||"–")+' · '+ el.map(b=>b==="GK"?"GK":b[0]).join("·")+(isAvail ? "" : " · "+(AVAIL.find(a=>a[0]===p.avail)||AVAIL[0])[1])+(st[p.id].onBand ? " · on at "+BANDNAME[st[p.id].onBand] : "")+'</div></div>'+quickBtn+'<span class="muted">'+(open?"▾":"▸")+'</span></div>';
+    const head = '<div class="prow'+(open?" open":"")+'" data-open="'+p.id+'">'+ avatar(p) + '<div class="meta"><b>'+esc(p.name)+'</b><div class="status'+(isAvail?"":" out")+'">#'+esc(p.number||"–")+' · '+ el.map(b=>b==="GK"?"GK":b[0]).join("·")+(isAvail ? "" : " · "+(AVAIL.find(a=>a[0]===p.avail)||AVAIL[0])[1])+(st[p.id].onBand ? " · on at "+esc(posName(st[p.id].onPos) || BANDNAME[st[p.id].onBand]) : "")+'</div></div>'+quickBtn+'<span class="muted">'+(open?"▾":"▸")+'</span></div>';
     if(!open) return head;
     
     let sznHtml = "";
@@ -1760,9 +1867,9 @@ function renderHelp(){
       q("What is the difference between Field and Next?",
         "<b>Field</b> is what is happening right now. Change something here and it takes effect immediately — that is your injury sub or a quick fix.<br><br><b>Next</b> is the shift you are getting ready. Nothing there is live until you tap Send them on.")+
       q("How do I move players around?",
-        "Tap a player, then tap where they should go — another player, or an open spot. You will be asked to confirm.<br><br>Or press and hold a player and drag them. Dragging takes effect straight away, with no confirmation.")+
+        "Every spot on the field is a specific position — left D, sweeper, striker and so on. Tap a player, then tap exactly where they should go: another player to trade spots, or an open position. You will be asked to confirm.<br><br>Or press and hold a player and drag them onto the spot. Dragging takes effect straight away, with no confirmation.")+
       q("Who picks the next shift?",
-        "The app keeps one ready for you, built around who has played least. Everyone already on the field stays where they are standing unless there is a good reason to move them, so you are never reading out seven new positions at once.<br><br>Change anything you like on the Next tab before you send it.")+
+        "The app keeps one ready for you, built around who has played least. Everyone already on the field stays in the position they are standing in unless swapping ends evens out their time.<br><br>Players coming on go to the open positions they have spent the least time in, so over a game kids try spots they haven't played. Turn off <b>Put subs in positions they haven't played</b> on Setup to even out only defense, midfield and attack.<br><br>Change anything you like on the Next tab before you send it.")+
       q("What does a faded player mean?",
         "On the <b>Next</b> tab, faded means they are holding that spot. Leave a spot alone and nobody there changes — so you can swap two players and leave the rest of the team alone.")+
       q("Before the game starts",
@@ -1774,7 +1881,7 @@ function renderHelp(){
       q("Somebody got hurt.",
         "Tap them on the Field tab, then <b>Hurt — sub out now</b>. They come straight off and the app offers the fairest replacement.")+
       q("Is playing time really equal?",
-        "The <b>Minutes</b> tab is the record. Each cell shows time played, and underneath it how many times they went into that spot. Goalie minutes count toward a player's total.<br><br>Tap any time to correct it if something got logged wrong.")+
+        "The <b>Minutes</b> tab is the record. Each cell shows time played, and underneath it how many times they went into that spot. Goalie minutes count toward a player's total. Tap a name to see time in each specific position.<br><br>Tap any time to correct it if something got logged wrong.")+
       q("I made a mistake.",
         "<b>Undo last</b> on the Field tab reverses the last change. On <b>History</b> you can delete a goal, card or note — substitutions cannot be deleted there, because the minute totals depend on them. Fix those by substituting again.")+
       q("Will I lose everything if I close the tab?",
@@ -1792,7 +1899,7 @@ function renderSetup(){
     '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b><div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
     '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
     '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
-    '<div class="card"><h2>Alerts and display</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+toggleRow("s-vib","Vibrate",s.vibrate)+toggleRow("s-confirm","Confirm changes made by tapping",s.confirmChanges!==false)+toggleRow("s-auto","Keep the next shift ready automatically",s.autoPlan!==false)+toggleRow("s-rot","Rotate players between defense and attack",s.rotate)+numField("s-switch","Most players who change position in one shift",s.maxSwitch==null?6:s.maxSwitch,0,10,1)+'<div class="adv-only">'+toggleRow("s-yc","Yellow card sends the player to a sin bin",!!s.ycSinBin)+'</div>'+toggleRow("s-sun","Sun mode — maximum contrast",s.sun)+'<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
+    '<div class="card"><h2>Alerts and display</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz when you press and hold a player",s.dragBuzz!==false)+toggleRow("s-confirm","Confirm changes made by tapping",s.confirmChanges!==false)+toggleRow("s-auto","Keep the next shift ready automatically",s.autoPlan!==false)+toggleRow("s-rot","Rotate players between defense and attack",s.rotate)+toggleRow("s-fresh","Put subs in positions they haven't played",s.freshPositions!==false)+switchField(s.maxSwitch)+'<div class="adv-only">'+toggleRow("s-yc","Yellow card sends the player to a sin bin",!!s.ycSinBin)+'</div>'+toggleRow("s-sun","Sun mode — maximum contrast",s.sun)+'<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
     '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
     '<div class="card"><h2>About this app</h2><div class="muted" style="line-height:1.5">'+
       'Sideline tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
@@ -1804,8 +1911,9 @@ function renderSetup(){
   document.getElementById("adv-off").addEventListener("click", ()=>{ S.settings.advanced = false; save(); render(); });
   document.getElementById("s-size").addEventListener("change", e => { S.settings.teamSize = parseInt(e.target.value); S.settings.formationIdx = 0; save(); render(); });
   document.getElementById("s-form").addEventListener("change", e => { S.settings.formationIdx = parseInt(e.target.value); save(); render(); });
-  bindNum("s-periods", v => S.settings.periods = v); bindNum("s-plen", v => S.settings.periodLen = v); bindNum("s-slen", v => { S.settings.shiftLen = v; S.game.warned=false; S.game.alerted=false; }); bindNum("s-warn", v => S.settings.warnLead = v); bindNum("s-min", v => S.settings.minStint = v); bindNum("s-stale", v => S.settings.staleWarn = v); bindNum("s-sin", v => S.settings.sinBinMins = v); bindNum("s-switch", v => S.settings.maxSwitch = v);
-  bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
+  bindNum("s-periods", v => S.settings.periods = v); bindNum("s-plen", v => S.settings.periodLen = v); bindNum("s-slen", v => { S.settings.shiftLen = v; S.game.warned=false; S.game.alerted=false; }); bindNum("s-warn", v => S.settings.warnLead = v); bindNum("s-min", v => S.settings.minStint = v); bindNum("s-stale", v => S.settings.staleWarn = v); bindNum("s-sin", v => S.settings.sinBinMins = v);
+  document.getElementById("s-switch").addEventListener("change", e => { S.settings.maxSwitch = e.target.value === "" ? null : parseInt(e.target.value); save(); });
+  bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-dragbuzz", v => S.settings.dragBuzz = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-fresh", v => S.settings.freshPositions = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
   document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
   document.getElementById("s-help").addEventListener("click", ()=>{ activeTab = "help"; render(); });
   document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));
@@ -1852,6 +1960,9 @@ function selfCheck(){
   });
   ok("Nobody is on twice", !dupes.length, dupes.map(p=>p.name).join(", "));
 
+  const codes = onField.map(p => st[p.id].onPos).filter(Boolean), clash = codes.filter((c, i) => codes.indexOf(c) !== i);
+  ok("No two players share a position", !clash.length, clash.map(posName).join(", "));
+
   const badElig = S.roster.filter(p => st[p.id].onBand && !eligible(p, st[p.id].onBand));
   ok("Everyone is in a position they play", !badElig.length, badElig.map(p=>p.name).join(", "));
 
@@ -1867,6 +1978,11 @@ function selfCheck(){
 function describeFormation(){
   const f = formation(), parts = [f.d+" at the back", f.m ? f.m+" in midfield" : "no midfield", f.f+" up top", f.gk ? "1 in goal" : "no keeper"];
   return parts.join(" · ") + " = " + ((f.gk?1:0)+f.d+f.m+f.f) + " on the field.";
+}
+function switchField(v){
+  return '<label class="field"><span>Most players who change position in one shift</span><select id="s-switch">'+
+    '<option value=""'+(v == null ? " selected" : "")+'>No limit</option>'+
+    [0,1,2,3,4,5,6,7,8,9,10].map(k => '<option value="'+k+'"'+(v === k ? " selected" : "")+'>'+k+'</option>').join("")+'</select></label>';
 }
 function numField(id,label,val,min,max,step){ return '<label class="field"><span>'+label+'</span><input type="number" id="'+id+'" value="'+val+'" min="'+min+'" max="'+max+'" step="'+step+'" inputmode="numeric"></label>'; }
 function bindNum(id, set){ const el = document.getElementById(id); if(!el) return; el.addEventListener("change", ()=>{ let v = parseFloat(el.value); const min = parseFloat(el.min), max = parseFloat(el.max); if(isNaN(v)) v = min; v = Math.max(min, Math.min(max, v)); el.value = v; set(v); save(); paintClocks(); }); }

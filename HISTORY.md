@@ -66,6 +66,21 @@ minutes with all of them playing both ends.
 **Don't "optimize" this back.** The churn was the single worst usability
 failure the project had.
 
+On 2026-09-14 the coach set the swap cap's default to no limit. Holding players
+in their exact position is what keeps churn down; the cap is still on Setup.
+
+### Specific positions
+
+Added 2026-09-14. "Defense" wasn't specific enough: a kid could spend twenty
+minutes at left D and never play right D or sweeper. Each band now splits left
+to right into named positions, the code is written into ON and MOVE events, and
+tapping or dragging always lands in one exact position. Auto-fill sends incoming
+players to the open position they've spent least time in (`freshPositions`,
+default on). Eligibility stayed by band.
+
+Logs from before this have no `pos`. They still load: `fieldLayout()` seats
+those players in the first open slot of their band.
+
 ### The keeper holds their spot
 
 Auto-fill pins whoever is in goal. A keeper changing every rotation is its own
@@ -168,15 +183,17 @@ the log, not stored here.
 | `periods` / `periodLen` | `2` / `25` | Count and minutes |
 | `shiftLen` | `5` | Minutes between rotations |
 | `minStint` | `90` | Seconds a player must be on before auto-fill will pull them |
-| `maxSwitch` | `6` | Most players who may change position in one shift |
+| `maxSwitch` | `null` | Most players swapped front to back in one shift; `null` is no limit |
 | `rotate` | `true` | Prefer moving players between defense and attack |
+| `freshPositions` | `true` | Put incoming players in the open positions they've played least |
 | `autoPlan` | `true` | Keep the next shift prepared in the background |
 | `confirmChanges` | `true` | Confirm tap-initiated changes (drag is never confirmed) |
 | `ycSinBin` | `false` | Whether a yellow card removes the player temporarily |
 | `sinBinMins` | `5` | Sin bin duration |
 | `staleWarn` | `10` | Minutes on the bench before a player is flagged |
 | `warnLead` | `30` | Seconds before shift end for the warning beep |
-| `sound` / `vibrate` / `sun` | `false` / `false` / `false` | Alerts and high-contrast theme |
+| `sound` / `vibrate` / `sun` | `false` / `false` / `false` | Shift-end buzzer, shift-end vibration, high-contrast theme |
+| `dragBuzz` | `true` | Short buzz when you press and hold a player to drag |
 
 Formations are written **defense-midfield-forward-keeper**, so `3-0-3-1` is
 three at the back, no midfield, three up top, one in goal.
@@ -196,6 +213,9 @@ three at the back, no midfield, three up top, one in goal.
   next: { GK: [id|null], DEF: […], MID: […], FWD: […] } | null }
 ```
 
+Slot `i` in a band is position `posCodes(band, slotsFor(band))[i]`, so
+`next.DEF[0]` is Left D in a three-back formation.
+
 `base + (now - startedAt)` is time in the current period, clamped to
 `periodLen`. `priorTotal + that` is game-elapsed. Everything that affects
 minutes uses game-elapsed seconds, so paused time never counts.
@@ -209,7 +229,8 @@ minutes uses game-elapsed seconds, so paused time never counts.
   gt:  412.5,         // game-elapsed seconds — this is what drives minutes
   sh:  2,             // shift number, History groups by this
   period: 1,
-  type, playerId, band, note }
+  type, playerId, band, note,
+  pos: "LD" }         // ON and MOVE only: the exact position; absent in older logs
 ```
 
 Types: `ON`, `OFF`, `MOVE` (structural — these determine all minutes);
@@ -226,8 +247,10 @@ Returns, per player id:
 
 ```
 { GK, DEF, MID, FWD, total,      // seconds
-  n: { GK, DEF, MID, FWD }, nTotal,   // times entering each position
-  onBand, onSince, lastOff,      // current stint
+  n: { GK, DEF, MID, FWD }, nTotal,   // times entering each band
+  pos: { LD: seconds, … },       // time in each specific position
+  np:  { LD: count, … },         // times moved into each position
+  onBand, onPos, onSince, lastOff,    // current stint
   goals, assists, saves, ga, shots, sog, yellows, reds, sinBinEnd }
 ```
 
@@ -237,8 +260,8 @@ Call `invalidate()` after any mutation.
 ### Lineup and Archived
 
 ```
-Lineup   = { id, name, at, size, form, slots: { BAND: [playerId] } }
-Archived = { at, periods, score, totals: [{name, number, GK, DEF, MID, FWD, total}],
+Lineup   = { id, name, at, size, form, slots: { BAND: [playerId|null] } }   // index = position slot
+Archived = { at, periods, score, totals: [{name, number, GK, DEF, MID, FWD, total, pos}],
              log }   // full log kept for the 3 most recent games only
 ```
 

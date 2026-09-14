@@ -15,16 +15,19 @@ head while nine kids ask you when they're going on.
 
 - **Even minutes.** Every player's clock runs while they're on. The app builds
   the next shift around whoever has played least.
-- **Positions, not just bodies.** Goalie, defense, midfield and forward are
-  tracked separately, so you can see that a player got twenty minutes but never
-  left the back line.
+- **Positions, not just bodies.** Every spot is a real position — left D,
+  sweeper, striker, right wing — so you can see that a player got twenty minutes
+  but never left the back line, or never played the right side.
+- **Everyone tries new spots.** Subs go into the positions they've played least,
+  so over a game kids rotate around the field. Turn it off if you'd rather keep
+  kids where they're comfortable.
 - **A next shift, always ready.** It prepares the rotation in the background.
   When the buzzer goes, you tap once.
-- **No seven-kid reshuffles.** Players already on the field hold their position
-  unless moving them genuinely evens things out, capped at a couple of changes
-  per shift.
-- **Built for a sideline.** Big targets, high-contrast sun mode, a buzzer and a
-  vibration at shift end, and the screen stays awake.
+- **No needless reshuffles.** Players already on the field hold their position
+  unless moving them genuinely evens things out. You can cap how many switch
+  per shift on Setup.
+- **Built for a sideline.** Big targets, high-contrast sun mode, an optional
+  buzzer and vibration at shift end, and the screen stays awake.
 - **Injuries and late arrivals.** Pull a player in one tap and the app offers
   the fairest replacement. Mark someone as arriving late or leaving early and
   they drop out of the rotation.
@@ -48,7 +51,7 @@ survives.
 
 1. **Roster** — add players. A name and a number is enough.
 2. **Setup** — pick your format. It ships set to 7 v 7.
-3. **Field** — tap an open spot, then tap the player who goes there.
+3. **Field** — tap an open position, then tap the player who goes there.
 4. **START** — top left, runs the clock.
 5. When the buzzer goes, tap **Send them on**.
 

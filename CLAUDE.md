@@ -26,8 +26,9 @@ No CDN links, no web fonts, no external requests of any kind.
 ## The one idea that matters
 
 Everything is derived from an immutable event log. `S.game.log` holds
-`{eid, g, t, gt, sh, period, type, playerId, band}` records. `compute()`
-replays it and returns per-player time, per-band stint counts, cards, goals.
+`{eid, g, t, gt, sh, period, type, playerId, band, pos}` records. `compute()`
+replays it and returns per-player time by band and by position, stint counts,
+cards, goals.
 Nothing is incremented in place.
 
 That is what makes swaps, undo, manual corrections and history all consistent
@@ -40,6 +41,10 @@ minutes just quietly go wrong. Hence the invariants below.
 - `g` groups events pushed together (one substitution = 2 events, one group).
   Undo pops a whole group.
 - `sh` is the shift number. History groups by it.
+- `pos` is the specific position code (`LD`, `SW`, `ST`…) on ON and MOVE.
+  Games logged before positions existed have none; `fieldLayout()` seats those
+  players in the first open slot of their band. Always go through
+  `fieldLayout()` / `whereOn()` for "who is where", never `onBand` alone.
 
 ## Invariants — these must hold
 
@@ -49,7 +54,8 @@ model, check both.
 
 1. **Minutes add up.** Sum of all players' time equals the integral of
    on-field headcount over elapsed game time. This is the big one.
-2. Field never holds more than `teamSize`; no band exceeds `slotsFor(band)`.
+2. Field never holds more than `teamSize`; no band exceeds `slotsFor(band)`;
+   no two players share a position code.
 3. No player has two open stints at once.
 4. Nobody is on the field in a position they aren't eligible for (auto-fill
    must never do this; manual placement may, with a warning).
@@ -69,15 +75,29 @@ player mysteriously benched the following week.
 **Auto-fill is stability-biased.** Naive "put each player where they've played
 least" produced *1 on, 1 off, 5 switched* every shift — seven kids being told
 new positions every ninety seconds. Current algorithm: pick the squad by
-minutes, hold everyone already on the field in the position they're standing
-in, then apply at most `maxSwitch` (default 6; was 2) deliberate front-to-back swaps.
-Equalization is unaffected — a simulated 50-minute game still lands every
-outfield player on exactly 25.0 minutes.
+minutes, hold everyone already on the field in the exact position they're
+standing in, put incoming players in the open positions they've spent least
+time in (`freshPositions`, default on; off evens out by band only), then apply
+front-to-back swaps that each even things out by more than two minutes.
+`maxSwitch` caps those swaps. Its default is `null`, no limit — the coach chose
+that on 2026-09-14 knowing the history above. Equalization is unaffected — a
+simulated 50-minute game still lands every outfield player on exactly 25.0
+minutes.
+
+**Positions are specific; eligibility is by band.** Each band splits left to
+right into named positions (`POSDEF`, `posCodes()`): Left D / Sweeper / Right D,
+Left wing / Striker / Right wing, and so on. Tapping and dragging always land in
+one exact slot, and swapping two players trades their exact positions. The
+roster still ticks only GK / DEF / MID / FWD. Lineups save slots by index, gaps
+included, so players come back in the same position.
 
 **The keeper holds their spot** unless moved manually.
 
 **Tapping confirms, dragging doesn't.** Successive taps are easy to trigger by
 accident; a press-and-hold drag is deliberate. Don't make these symmetric.
+
+**The press-and-hold buzz has its own setting** (`dragBuzz`). `vibrate` is only
+the shift-end alert; a coach can want one without the other.
 
 **Goalie minutes count toward a player's total.** Deliberate. The Minutes grid
 shows GK separately so you can still see it.
