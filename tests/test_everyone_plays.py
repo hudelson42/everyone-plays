@@ -102,7 +102,7 @@ def play_full_game(pg, fresh):
         for k in range(1, 6):
             run_shift(pg, k * 300)
         if half == 0:
-            pg.evaluate("S.game.base = 1500; endPeriodNow(); nextPeriod();")
+            pg.evaluate("S.game.base = 1500; endPeriodNow();")
 
 
 def main():
@@ -193,6 +193,48 @@ def main():
               f"{spread['lo']}–{spread['hi']} min across {spread['n']} outfield players")
         check("everyone plays both ends", spread["both"] == spread["n"],
               f"{spread['both']}/{spread['n']}")
+
+        # ---------------------------------------------------------------
+        section("Periods")
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        brk = pg.evaluate("""(() => {
+          S.settings.periods = 2; S.settings.periodLen = 25; activeTab = 'field'; render();
+          S.game.running = true; S.game.startedAt = Date.now() - 1000; S.game.base = 1500;
+          tick();
+          const at = { period: S.game.period, over: S.game.periodOver, onBreak: S.game.onBreak, tab: activeTab,
+                       card: document.querySelector('#v-field .card b') && document.querySelector('#v-field .card b').textContent,
+                       label: document.getElementById('tb-period').textContent };
+          startClock();
+          const after = { running: S.game.running, onBreak: S.game.onBreak, period: S.game.period };
+          stopClock();
+          return { at, after }; })()""")
+        check("a period ending moves straight to the next one",
+              brk["at"]["period"] == 2 and not brk["at"]["over"] and brk["at"]["onBreak"], str(brk["at"]))
+        check("the break says so on the Field tab without switching tabs",
+              brk["at"]["tab"] == "field" and "Period 1 is over" in (brk["at"]["card"] or "")
+              and brk["at"]["label"] == "Period 2 ready", str(brk["at"]))
+        check("START begins the next period", brk["after"]["running"] and not brk["after"]["onBreak"]
+              and brk["after"]["period"] == 2, str(brk["after"]))
+
+        last = pg.evaluate("""(() => {
+          S.game.running = true; S.game.startedAt = Date.now() - 1000; S.game.base = 1500;
+          tick();
+          const over = S.game.periodOver, card = !!document.getElementById('f-newgame');
+          startClock();
+          const asked = document.getElementById('modalwrap').classList.contains('show')
+            && document.getElementById('modaltitle').textContent === 'Game over';
+          closeModal();
+          return { over, card, asked, running: S.game.running }; })()""")
+        check("the last period ends the game with a New game button", last["over"] and last["card"], str(last))
+        check("START after the game offers a new game instead of running the clock",
+              last["asked"] and not last["running"], str(last))
+
+        legacy_break = pg.evaluate("""(() => {
+          S.game = newGame(); S.game.period = 1; S.game.base = 1500; S.game.periodOver = true;
+          startClock(); const r = { period: S.game.period, running: S.game.running }; stopClock();
+          S.game = newGame(); invalidate(); render(); return r; })()""")
+        check("a game saved mid-break by an older version starts its next period",
+              legacy_break["period"] == 2 and legacy_break["running"], str(legacy_break))
 
         # ---------------------------------------------------------------
         section("Positions")

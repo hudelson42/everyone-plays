@@ -268,6 +268,7 @@ three at the back, no midfield, three up top, one in goal.
   id, date, opponent,        // date is set at the first kickoff
   present: [playerId] | null,  // who was available at kickoff
   pausedAt, nagged,          // paused-clock reminder
+  onBreak,                   // between periods: advanced, clock not yet started
   next: { GK: [id|null], DEF: […], MID: […], FWD: […] } | null }
 ```
 

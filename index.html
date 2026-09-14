@@ -446,7 +446,7 @@ const DEFAULTS = {
 function newGame(){
   return { id:uid(), log:[], seq:0, shift:1, period:1, running:false, startedAt:null, base:0,
            priorTotal:0, periodOver:false, shiftStart:0, warned:false, alerted:false, adj:{}, next:null,
-           date:null, opponent:"", present:null, pausedAt:null, nagged:false };
+           date:null, opponent:"", present:null, pausedAt:null, nagged:false, onBreak:false };
 }
 /* Turn whatever came out of storage or a backup into a complete state object: settings added
    since it was saved get their defaults, and the phone-level settings come from the index. */
@@ -1072,11 +1072,15 @@ document.addEventListener("visibilitychange", ()=>{
 
 /* ---------------- clock control ---------------- */
 function startClock(){
-  if(S.game.periodOver){ toast(S.game.period >= S.settings.periods ? "Game over" : "Start next period on Clock tab"); return; }
+  if(S.game.periodOver){
+    /* the game is over, unless it was saved mid-break by an older version or periods were added */
+    if(S.game.period >= S.settings.periods){ promptNewGame(); return; }
+    nextPeriod();
+  }
   /* the first kickoff dates the game and records who was there */
   if(!S.game.date) S.game.date = Date.now();
   if(!S.game.present) S.game.present = S.roster.filter(available).map(p => p.id);
-  S.game.running = true; S.game.startedAt = Date.now(); S.game.pausedAt = null; S.game.nagged = false;
+  S.game.running = true; S.game.startedAt = Date.now(); S.game.pausedAt = null; S.game.nagged = false; S.game.onBreak = false;
   if(!S.game.log.length && !S.game.shiftStart) resetShiftClock();
   wake(true); save(); render();
 }
@@ -1085,14 +1089,22 @@ function stopClock(){
   wake(false); save(); render();
 }
 function toggleClock(){ S.game.running ? stopClock() : startClock(); }
-function endPeriodNow(){ stopClock(); S.game.periodOver = true; push([{type:"PERIOD_END"}]); alarm("end"); render(); }
-function nextPeriod(){
-  S.game.priorTotal += S.game.base; S.game.base = 0; S.game.period++; S.game.periodOver = false; S.game.pausedAt = null;
+/* A period ending moves straight to the next one, clock stopped at 0:00, so START is all it
+   takes to begin it — no trip to the Clock tab. Only the last period leaves the game over. */
+function endPeriodNow(){
+  stopClock(); push([{type:"PERIOD_END"}]); alarm("end");
+  if(S.game.period < S.settings.periods){
+    const ended = S.game.period; nextPeriod();
+    toast("Period "+ended+" is over. Tap START when period "+S.game.period+" begins.");
+  } else { S.game.periodOver = true; save(); render(); toast("Game over"); }
+}
+/* Doesn't switch tabs when the buzzer ends a period on its own — the Field and Next tabs say
+   what's happening instead. A coach who taps "Start period" on the Clock tab lands on the lineup. */
+function nextPeriod(toLineup){
+  S.game.priorTotal += S.game.base; S.game.base = 0; S.game.period++; S.game.periodOver = false; S.game.pausedAt = null; S.game.onBreak = true;
   beginNewShift(); save();
-  /* halftime is when coaches reset everything — land them on the lineup, not the clock */
-  if(S.settings.autoPlan){ maybeAutoPlan(); if(nextCount()){ activeTab = "next"; } }
+  if(S.settings.autoPlan){ maybeAutoPlan(); if(toLineup === true && nextCount()) activeTab = "next"; }
   render();
-  toast("Period "+S.game.period+" — check your lineup");
 }
 
 function tick(){
@@ -1134,7 +1146,8 @@ function checkSinBin(){
 function paintClocks(){
   const s = S.settings;
   document.getElementById("tb-clock").textContent = fmt2(periodElapsed());
-  document.getElementById("tb-period").textContent = S.game.periodOver ? "Period " + S.game.period + " over" : "Period " + S.game.period + " of " + s.periods;
+  document.getElementById("tb-period").textContent = S.game.periodOver ? (S.game.period >= s.periods ? "Game over" : "Period " + S.game.period + " over")
+    : S.game.onBreak ? "Period " + S.game.period + " ready" : "Period " + S.game.period + " of " + s.periods;
   const rem = shiftRemaining();
   document.getElementById("tb-shiftval").textContent = (rem<0?"+":"") + fmt(Math.abs(rem));
   document.getElementById("tb-go").textContent = S.game.running ? "PAUSE" : "START";
@@ -1256,6 +1269,13 @@ function renderField(){
     ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>Next shift is ready</b> <span class="muted">· '+onCt+' on · '+offCt+' off'+(mvCt?' · '+mvCt+' switching':'')+'</span><div class="row" style="margin-top:8px"><button class="btn primary" id="send-next">Send them on</button><button class="btn ghost" id="edit-next">Edit plan</button></div></div>'
     : '<div class="row" style="margin-bottom:10px"><button class="btn primary" id="plan-next">Plan next shift</button></div>';
 
+  /* between periods and after the whistle, say what happens next right here */
+  const periodCard = S.game.onBreak && S.game.log.length
+    ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>Period '+(S.game.period-1)+' is over.</b> <span class="muted">Set the lineup if you want, then tap START when period '+S.game.period+' begins.</span></div>'
+    : S.game.periodOver
+    ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>Game over.</b> <span class="muted">Check the minutes, then start a new game to file this one in History.</span><div class="row" style="margin-top:8px"><button class="btn" id="f-mins">See minutes</button><button class="btn primary" id="f-newgame">New game</button></div></div>'
+    : '';
+
   /* before kickoff the useful buttons are different ones */
   const preBar = !S.game.log.length
     ? '<div class="row" style="margin-bottom:10px"><button class="btn" id="f-checkin">Who is here?</button>'+
@@ -1284,7 +1304,7 @@ function renderField(){
   }
 
   document.getElementById("v-field").innerHTML =
-    teamBar("f-team") + banner + preBar + upStrip + pitch + '<div class="row" style="margin-bottom:10px"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div><h3>Bench</h3>' + benchHTML +
+    teamBar("f-team") + periodCard + banner + preBar + upStrip + pitch + '<div class="row" style="margin-bottom:10px"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div><h3>Bench</h3>' + benchHTML +
     (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap an open spot then a player, tap a player then a spot, or tap two players to swap them. Press and hold to drag instead. Changes here count as mid-shift swaps.</div>');
 
   document.querySelectorAll("#v-field [data-chip]").forEach(el => {
@@ -1315,6 +1335,8 @@ function renderField(){
   }
 
   const ft = document.getElementById("f-team"); if(ft) ft.addEventListener("click", openTeams);
+  const fm = document.getElementById("f-mins"); if(fm) fm.addEventListener("click", ()=>{ activeTab = "times"; timesView = "game"; render(); });
+  const fn = document.getElementById("f-newgame"); if(fn) fn.addEventListener("click", promptNewGame);
   const ci = document.getElementById("f-checkin"); if(ci) ci.addEventListener("click", openCheckIn);
   const fl = document.getElementById("f-lineup"); if(fl) fl.addEventListener("click", openLineups);
   const goNext = document.getElementById("plan-next"); if(goNext) goNext.addEventListener("click", ()=>{ activeTab = "next"; render(); });
@@ -1569,7 +1591,7 @@ function renderNext(){
     '<div class="row" style="margin-top:8px"><button class="btn" id="n-gk">Put '+esc(first(gkList[0].p.id))+' in goal</button><button class="btn ghost" id="n-gklist">See everyone</button></div></div>' : '';
   const summary = placed ? comingOn+" on · "+comingOff+" off"+(moving?" · "+moving+" switching spots":"") : "Nothing planned yet. Auto-fill it, or drag players into the spots you want to change.";
   document.getElementById("v-next").innerHTML =
-    '<div class="card" style="margin-bottom:10px"><b>Shift '+(S.game.shift+1)+'</b> <span class="muted">· '+summary+'</span><div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn ghost" id="n-load">Load lineup</button><button class="btn ghost" id="n-save"'+(placed?"":" disabled")+'>Save</button></div><div class="row" style="margin-top:8px"><button class="btn ghost wide" id="n-clear"'+(placed?"":" disabled")+'>Clear plan</button></div><button class="btn primary wide" id="n-send" style="margin-top:8px"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes to send")+'</button></div>'+
+    '<div class="card" style="margin-bottom:10px">'+(S.game.onBreak ? '<div class="muted" style="margin-bottom:6px">Setting up period '+S.game.period+'. Send them on, then tap START when play begins.</div>' : '')+'<b>Shift '+(S.game.shift+1)+'</b> <span class="muted">· '+summary+'</span><div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn ghost" id="n-load">Load lineup</button><button class="btn ghost" id="n-save"'+(placed?"":" disabled")+'>Save</button></div><div class="row" style="margin-top:8px"><button class="btn ghost wide" id="n-clear"'+(placed?"":" disabled")+'>Clear plan</button></div><button class="btn primary wide" id="n-send" style="margin-top:8px"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes to send")+'</button></div>'+
     gkCard + pitch + '<div class="hint">Faded players are holding their spot — leave a slot alone and nobody there changes. Tap a spot then a player, tap a player then a spot, or press and hold to drag.</div><h3>Available — lowest minutes first</h3>'+poolHTML;
 
   document.querySelectorAll("#v-next [data-chip],#v-next [data-nslot]").forEach(el => {
@@ -1676,24 +1698,27 @@ function renderClock(){
   const g = S.game, s = S.settings, done = g.period >= s.periods && g.periodOver;
   document.getElementById("v-clock").innerHTML =
     '<div class="card" style="text-align:center"><div class="muted">Period '+g.period+' of '+s.periods+'</div><div class="mono" id="big-clock" style="font-size:var(--fs-clock);font-weight:700;letter-spacing:-2px">00:00</div><div class="muted" id="big-left"></div><div style="margin-top:14px" class="muted">Shift clock</div><div class="mono" id="big-shift" style="font-size:34px;font-weight:700">0:00</div><div class="row" style="margin-top:14px"><button class="btn primary" id="c-toggle">'+(g.running?"Pause":"Start")+'</button><button class="btn" id="c-shift">Restart shift</button></div></div>'+
-    (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? "" : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End period '+g.period+' now</button><div class="muted" style="margin-top:8px">The clock stops on its own at '+s.periodLen+' minutes. Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
+    (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? '<button class="btn primary wide" id="c-newgame">Start a new game</button>' : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End period '+g.period+' now</button><div class="muted" style="margin-top:8px">The clock stops on its own at '+s.periodLen+' minutes. Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
     '<div class="card"><h2>Game controls</h2><div class="row" style="margin-bottom:8px"><button class="btn" id="c-note">Add a note</button><button class="btn ghost" id="c-undo">Undo last</button></div><button class="btn warn wide" id="c-new">New game</button><div class="muted" style="margin-top:8px">New game clears the clock and all minutes, files this game in History, and keeps your roster and settings.</div></div>';
 
   document.getElementById("c-toggle").addEventListener("click", toggleClock);
   document.getElementById("c-shift").addEventListener("click", ()=>{ resetShiftClock(); save(); render(); });
   const ce = document.getElementById("c-end"); if(ce) ce.addEventListener("click", ()=>modal("End period "+g.period+"?", "The clock stops and minutes stop accruing.", "End period", endPeriodNow));
-  const cn = document.getElementById("c-next"); if(cn) cn.addEventListener("click", nextPeriod);
+  const cn = document.getElementById("c-next"); if(cn) cn.addEventListener("click", ()=>nextPeriod(true));
+  const cg = document.getElementById("c-newgame"); if(cg) cg.addEventListener("click", promptNewGame);
   document.getElementById("c-undo").addEventListener("click", undoLast);
   document.getElementById("c-note").addEventListener("click", ()=>{
     modal("Add a note", '<input type="text" id="notetext" placeholder="Goal, injury, ref call…">', "Save note", ()=>{ const v = document.getElementById("notetext").value.trim(); if(v) { push([], v); toast("Note added"); render(); } });
     setTimeout(()=>{ const n=document.getElementById("notetext"); if(n) n.focus(); }, 60);
   });
-  document.getElementById("c-new").addEventListener("click", ()=>{
-    modal("Start a new game?", '<div style="font-size:15px;margin-bottom:10px">This game goes into History and the season totals. The roster, photos and settings stay put.</div>'+
-      '<label class="field"><span>Next opponent (optional)</span><input type="text" id="ng-opp" maxlength="40"></label>', "Start new game", ()=>{
-      const opp = (document.getElementById("ng-opp").value || "").trim();
-      archiveGame(); S.game = newGame(); S.game.opponent = opp; save(); render(); toast("New game ready");
-    });
+  document.getElementById("c-new").addEventListener("click", promptNewGame);
+}
+function promptNewGame(){
+  const over = S.game.periodOver && S.game.period >= S.settings.periods;
+  modal(over ? "Game over" : "Start a new game?", '<div style="font-size:15px;margin-bottom:10px">'+(over ? "Start a new game when you are ready. " : "")+'This game goes into History and the season totals. The roster, photos and settings stay put.</div>'+
+    '<label class="field"><span>Next opponent (optional)</span><input type="text" id="ng-opp" maxlength="40"></label>', "Start new game", ()=>{
+    const opp = (document.getElementById("ng-opp").value || "").trim();
+    archiveGame(); S.game = newGame(); S.game.opponent = opp; save(); render(); toast("New game ready");
   });
 }
 const ARCHIVE_MAX = 100, LOGS_KEPT = 3;

@@ -99,6 +99,12 @@ one exact slot, and swapping two players trades their exact positions. The
 roster still ticks only GK / DEF / MID / FWD. Lineups save slots by index, gaps
 included, so players come back in the same position.
 
+**A period ending moves straight to the next one.** `endPeriodNow()` advances
+to the next period with the clock stopped at 0:00 and `onBreak` set, so START
+begins it. It doesn't switch tabs on its own; the Field and Next tabs say what's
+happening. Only the last period sets `periodOver`, and START then offers a new
+game. Coaches used to have to find the Clock tab to start period 2.
+
 **The keeper holds their spot** unless moved manually.
 
 **Tapping confirms, dragging doesn't.** Successive taps are easy to trigger by

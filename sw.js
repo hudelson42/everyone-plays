@@ -1,7 +1,7 @@
 /* Everyone Plays service worker. The cache name keeps the old "sideline" prefix on purpose.
    Bump CACHE when you upload a new index.html — that's what tells installed
    phones to pick the new version up. */
-const CACHE = "sideline-v7";
+const CACHE = "sideline-v8";
 const SHELL = [
   "./",
   "./index.html",
