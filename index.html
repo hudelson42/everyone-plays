@@ -1,0 +1,1950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0E1513">
+<title>Sideline — shift tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="favicon-32.png" sizes="32x32">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sideline">
+<meta name="description" content="Substitution and playing-time tracker for youth soccer coaches. Works offline, keeps everything on your phone.">
+<style>
+:root{
+  --bg:#0E1513; --panel:#16201D; --panel2:#1D2926; --line:#2C3B36;
+  --turf:#12392A; --turf-line:rgba(233,245,239,.22);
+  --ink:#E9F5EF; --ink-dim:#8FA69E;
+  --on:#3ECF8E; --next:#F2B33D; --alert:#E4572E; --gk:#7FB2FF; --warn:#F2B33D;
+  --r:10px; --tap:44px;
+  --fs-clock:clamp(44px,15vw,64px);
+}
+body.sun{
+  --bg:#FFFFFF; --panel:#FFFFFF; --panel2:#F0F0F0; --line:#000000;
+  --turf:#FFFFFF; --turf-line:#000000;
+  --ink:#000000; --ink-dim:#333333;
+  --on:#006B3C; --next:#9A5B00; --alert:#B3130B; --gk:#0B3EA8; --warn:#C67A00;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;overflow:hidden}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px; line-height:1.35;
+  touch-action:manipulation; user-select:none; -webkit-user-select:none;
+  overscroll-behavior:none;
+}
+body.sun{font-weight:600}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:none;border:none;padding:0;cursor:pointer}
+
+/* ---------- shell ---------- */
+#app{display:flex;flex-direction:column;height:100%;padding-top:env(safe-area-inset-top)}
+#topbar{
+  display:flex;align-items:center;gap:10px;padding:8px 12px;
+  border-bottom:1px solid var(--line);background:var(--panel);flex:none;
+}
+#tb-clock{font-size:26px;font-weight:700;letter-spacing:-.5px}
+#tb-period{font-size:11px;color:var(--ink-dim);margin-top:-2px}
+#tb-shift{margin-left:auto;text-align:right}
+#tb-shiftval{font-size:22px;font-weight:700}
+#tb-shiftlab{font-size:10px;color:var(--ink-dim);letter-spacing:.04em}
+#tb-go{
+  width:56px;height:40px;border-radius:var(--r);border:1px solid var(--line);
+  background:var(--panel2);font-size:12px;font-weight:700;
+}
+#tb-go.running{background:var(--on);color:#06150E;border-color:var(--on)}
+body.sun #tb-go.running{color:#fff}
+.over #tb-shiftval{color:var(--alert)}
+
+/* Advanced mode visibilities */
+body:not(.adv) .adv-only { display: none !important; }
+
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 12px 20px}
+.view{display:none}
+.view.active{display:block}
+
+nav#tabs{
+  display:flex;flex:none;border-top:1px solid var(--line);background:var(--panel);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav#tabs button{
+  flex:1;min-width:0;min-height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;color:var(--ink-dim);font-size:10px;letter-spacing:.01em;padding:6px 2px;
+}
+nav#tabs button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav#tabs button.active{color:var(--ink)}
+nav#tabs button.active svg{stroke:var(--on)}
+
+/* ---------- generic ---------- */
+h2{font-size:17px;margin:0 0 8px;font-weight:700;letter-spacing:-.2px}
+h3{font-size:12px;margin:18px 0 6px;color:var(--ink-dim);font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:12px}
+.btn{
+  min-height:var(--tap);padding:0 14px;border-radius:var(--r);border:1px solid var(--line);
+  background:var(--panel2);font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+}
+.btn.wide{width:100%}
+.btn.primary{background:var(--on);color:#06150E;border-color:var(--on)}
+body.sun .btn.primary{color:#fff}
+.btn.warn{background:var(--alert);color:#fff;border-color:var(--alert)}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.38}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.muted{color:var(--ink-dim);font-size:12px}
+label.field{display:block;margin-bottom:10px}
+label.field span{display:block;font-size:11px;color:var(--ink-dim);margin-bottom:4px}
+input[type=text],input[type=number],select,textarea{
+  width:100%;min-height:var(--tap);padding:8px 10px;border-radius:var(--r);
+  border:1px solid var(--line);background:var(--panel2);
+}
+textarea{min-height:110px;font-family:ui-monospace,Menlo,monospace;font-size:11px;resize:vertical}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{flex:1;min-height:var(--tap);font-weight:600;font-size:13px;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--on);color:#06150E}
+body.sun .seg button.on{color:#fff;background:var(--on)}
+.ev-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.ev-grid .btn { font-size: 11px; padding: 0; min-height: 38px; }
+
+/* ---------- pitch ---------- */
+#pitch{
+  background:var(--turf);border:1px solid var(--line);border-radius:var(--r);
+  padding:10px 8px;margin-bottom:12px;position:relative;overflow:hidden;
+}
+#pitch::before{
+  content:"";position:absolute;left:8px;right:8px;top:50%;height:1px;background:var(--turf-line);
+}
+#pitch::after{
+  content:"";position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;
+  border:1px solid var(--turf-line);border-radius:50%;
+}
+.band{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:6px 0}
+.bandlab{position:relative;z-index:1;font-size:10px;color:var(--ink-dim);text-align:center;margin-top:2px}
+body.sun .bandlab{color:#000}
+
+#pitch{--cw:98px;--avs:52px}
+.chip{
+  width:74px;min-height:74px;border-radius:var(--r);border:1px solid var(--line);
+  background:var(--panel);display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:2px;padding:5px 3px;position:relative;
+}
+.band .chip{width:var(--cw);min-height:calc(var(--cw) + 12px);gap:3px}
+.band .chip .av,.band .chip .avn{
+  width:var(--avs);height:var(--avs);font-size:calc(var(--avs) * .42)
+}
+.band .chip .nm{max-width:calc(var(--cw) - 8px);font-size:12px}
+.band .chip .tm{font-size:11px}
+#ghost{position:fixed;z-index:120;pointer-events:none;transform:translate(-50%,-50%) scale(1.06);
+  opacity:.96;box-shadow:0 10px 26px rgba(0,0,0,.55);border-color:var(--next)}
+.chip.dragging{opacity:.3}
+.droptarget{outline:3px dashed var(--next);outline-offset:2px}
+#benchzone.droptarget{outline:3px dashed var(--alert);border-radius:var(--r)}
+body.nodrag main{overflow:hidden}
+.postog{display:flex;gap:6px;margin:2px 0 10px}
+.postog button{
+  flex:1;min-height:var(--tap);border:1px solid var(--line);border-radius:var(--r);
+  background:var(--panel2);font-size:12px;font-weight:700;color:var(--ink-dim)
+}
+.postog button.on{background:var(--on);color:#06150E;border-color:var(--on)}
+body.sun .postog button.on{color:#fff}
+.addrow{display:flex;gap:8px;margin-bottom:12px}
+.addrow input.n{flex:3;min-width:0} .addrow input.j{flex:1;min-width:60px} .addrow button{flex:none;width:76px}
+.prow{cursor:pointer}
+.pedit{border:1px solid var(--line);border-top:none;border-radius:0 0 var(--r) var(--r);
+  background:var(--panel);padding:12px;margin-top:-9px}
+.prow.open{border-radius:var(--r) var(--r) 0 0}
+.av{width:34px;height:34px;border-radius:50%;object-fit:cover;display:block;border:1px solid var(--line)}
+.avn{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#06150E}
+body.sun .avn{color:#fff;border:1px solid #000}
+.chip .av{width:30px;height:30px;border-radius:50%;object-fit:cover;display:block;border:1px solid var(--line)}
+.chip .avn{
+  width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:#06150E;
+}
+body.sun .chip .avn{color:#fff;border:1px solid #000}
+.chip .nm{font-size:11px;font-weight:600;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip .tm{font-size:10px;color:var(--ink-dim)}
+.chip.sel{outline:3px solid var(--next);outline-offset:-1px}
+.chip.empty{border-style:dashed;color:var(--ink-dim);font-size:11px;justify-content:center}
+.chip.gkslot{border-color:var(--gk)}
+.chip.next{border-color:var(--next);box-shadow:inset 0 0 0 1px var(--next)}
+.chip.stale{border-color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
+.chip.sinbin{border-color:var(--alert);box-shadow:inset 0 0 0 2px var(--alert)}
+.chip{padding-top:11px}
+.chip .flag{position:absolute;top:2px;left:0;right:0;text-align:center;font-size:9px;letter-spacing:.03em;color:var(--next);font-weight:700}
+
+#benchzone,#poolzone{min-height:96px;padding-bottom:8px}
+#poolzone.droptarget{outline:3px dashed var(--alert);border-radius:var(--r)}
+#bench{display:flex;flex-wrap:wrap;gap:6px}
+.hint{font-size:12px;color:var(--ink-dim);margin:8px 0}
+.upnext{display:flex;align-items:center;gap:9px;padding:8px 10px;margin-bottom:10px;
+  border:1px solid var(--next);border-radius:var(--r);background:var(--panel);overflow:hidden}
+.uplab{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--next);flex:none;
+  text-transform:uppercase;line-height:1.1;max-width:42px}
+.uppl{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;white-space:nowrap;min-width:0}
+.uppl .av,.uppl .avn{width:26px;height:26px;font-size:11px;flex:none}
+.startrow{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.4}
+.startrow div b{color:var(--on)}
+.startrow>b:first-child{flex:none;width:24px;height:24px;border-radius:50%;background:var(--on);color:#06150E;
+  display:flex;align-items:center;justify-content:center;font-size:13px}
+body.sun .startrow>b:first-child{color:#fff}
+.badges{font-size:11px;font-weight:700;letter-spacing:.02em}
+.cirow{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;margin-bottom:6px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--panel2);min-height:var(--tap);opacity:.45}
+.cirow.on{opacity:1;border-color:var(--on)}
+.cirow .nm{flex:1;text-align:left;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cirow .tag{font-size:11px;font-weight:700;color:var(--ink-dim)}
+.cirow.on .tag{color:var(--on)}
+.lulist button{display:flex;align-items:center;gap:10px;width:100%;padding:10px;margin-bottom:6px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--panel2);min-height:var(--tap);text-align:left}
+.lulist b{flex:1;font-size:14px}
+.helpq{font-size:15px;font-weight:700;margin:16px 0 5px}
+.helpq:first-child{margin-top:0}
+.helpa{font-size:14px;line-height:1.45;color:var(--ink-dim)}
+.helpa b{color:var(--ink)}
+.selbar{
+  position:sticky;bottom:0;background:var(--panel);border:1px solid var(--next);
+  border-radius:var(--r);padding:10px;margin-top:10px;font-size:13px;
+}
+
+/* ---------- grid ---------- */
+table.grid{width:100%;border-collapse:collapse;table-layout:fixed}
+table.grid th{
+  font-size:10px;color:var(--ink-dim);font-weight:600;padding:6px 2px;text-align:right;
+  border-bottom:1px solid var(--line);
+}
+table.grid th:first-child{text-align:left}
+table.grid th.sortable{cursor:pointer}
+table.grid th.sorted{color:var(--ink);text-decoration:underline}
+table.grid td{padding:0;border-bottom:1px solid var(--line);height:50px;font-size:12px}
+table.grid td.t{text-align:right;padding-right:2px}
+table.grid td.t button,table.grid td.t .tot{
+  width:100%;height:50px;display:flex;flex-direction:column;align-items:flex-end;
+  justify-content:center;gap:0;padding-right:2px;font-size:12px
+}
+table.grid td.t .tot .mono{font-weight:700}
+.cnt{font-size:9px;color:var(--ink-dim);line-height:1.1}
+.chip.holding{opacity:.5;border-style:dashed}
+.chip.onnow{border-color:var(--on)}
+nav#tabs button{font-size:9px}
+.pname{display:flex;align-items:center;gap:6px;min-width:0}
+.pname b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pnum{
+  width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:700;color:#06150E
+}
+body.sun .pnum{color:#fff;border:1px solid #000}
+tr.onfield .pname b{color:var(--on)}
+tr.off{opacity:.45}
+col.c1{width:auto} col.ct{width:44px} col.ctot{width:50px}
+
+/* ---------- roster / history ---------- */
+.plist{display:flex;flex-direction:column;gap:8px}
+.prow{
+  display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--panel)
+}
+.prow .av,.prow .avn{width:38px;height:38px;border-radius:50%;flex:none}
+.prow .avn{display:flex;align-items:center;justify-content:center;font-weight:700;color:#06150E;font-size:14px}
+body.sun .prow .avn{color:#fff;border:1px solid #000}
+.prow .meta{flex:1;min-width:0}
+.prow .meta b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status{font-size:11px;color:var(--ink-dim)}
+.status.out{color:var(--alert)}
+.iconbtn{width:var(--tap);height:var(--tap);border-radius:var(--r);border:1px solid var(--line);background:var(--panel2);font-size:13px;flex:none}
+
+.hgroup{border:1px solid var(--line);border-radius:var(--r);margin-bottom:8px;background:var(--panel);overflow:hidden}
+.hhead{display:flex;align-items:center;gap:8px;padding:10px;width:100%;text-align:left}
+.hhead .t{font-size:13px;font-weight:700;min-width:52px}
+.hhead .s{font-size:12px;color:var(--ink-dim);flex:1}
+.hbody{padding:0 10px 10px;font-size:12px}
+.hbody div{padding:3px 0;border-top:1px solid var(--line)}
+.lrow{display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line)}
+.lpos{flex:none;width:62px;font-size:11px;color:var(--ink-dim);padding-top:1px}
+.lwho{flex:1;font-size:13px}
+.lmid{font-size:11px;color:var(--ink-dim);padding-top:5px;border-top:1px solid var(--line)}
+.in{color:var(--on)} .out2{color:var(--alert)}
+
+/* ---------- modal / flash ---------- */
+#flash{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:90;background:var(--alert)}
+#flash.go{animation:fl 1.4s ease-out 2}
+@keyframes fl{0%{opacity:0}12%{opacity:.75}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){#flash.go{animation:fl 1.4s steps(2) 1}}
+#modalwrap{position:fixed;inset:0;z-index:100;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.6)}
+#modalwrap.show{display:flex}
+#modal{
+  width:100%;max-width:560px;background:var(--panel);border:1px solid var(--line);
+  border-radius:14px 14px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));
+  max-height:88vh;overflow-y:auto
+}
+#modal h2{margin-bottom:10px}
+#modalbody{margin-bottom:12px;font-size:14px}
+.stage{font-size:13px;padding:6px 0;border-top:1px solid var(--line)}
+.toast{
+  position:fixed;left:50%;bottom:76px;transform:translateX(-50%);z-index:95;
+  background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);
+  padding:10px 14px;font-size:13px;max-width:88vw
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <button id="tb-go" class="mono">START</button>
+    <div>
+      <div id="tb-clock" class="mono">00:00</div>
+      <div id="tb-period">Period 1</div>
+    </div>
+    <div id="tb-score" class="adv-only" style="flex:1; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer;">
+       <div style="font-weight:900; font-size:18px; letter-spacing:1px;" class="mono"><span id="sc-us">0</span>-<span id="sc-them">0</span></div>
+       <div style="font-size:9px; color:var(--ink-dim); margin-top:-2px;">US - THEM</div>
+    </div>
+    <div id="tb-shift">
+      <div id="tb-shiftval" class="mono">0:00</div>
+      <div id="tb-shiftlab">shift left</div>
+    </div>
+  </header>
+
+  <main>
+    <section id="v-field" class="view active"></section>
+    <section id="v-next" class="view"></section>
+    <section id="v-clock" class="view"></section>
+    <section id="v-times" class="view"></section>
+    <section id="v-log" class="view"></section>
+    <section id="v-roster" class="view"></section>
+    <section id="v-help" class="view"></section>
+    <section id="v-setup" class="view"></section>
+  </main>
+
+  <nav id="tabs"></nav>
+</div>
+<div id="flash"></div>
+<div id="modalwrap"><div id="modal">
+  <h2 id="modaltitle"></h2>
+  <div id="modalbody"></div>
+  <div class="row">
+    <button class="btn ghost" id="modalcancel">Cancel</button>
+    <button class="btn primary" id="modalok">OK</button>
+  </div>
+</div></div>
+
+<script>
+"use strict";
+/* ============================================================
+   Sideline — soccer substitution & shift tracker
+   ============================================================ */
+
+const BANDS = ["GK","DEF","MID","FWD"];
+const BANDNAME = {GK:"Goalie",DEF:"Defense",MID:"Midfield",FWD:"Forward"};
+
+const FORMATIONS = {
+  4:[{d:2,m:0,f:2,gk:false},{d:1,m:2,f:1,gk:false},{d:2,m:0,f:1,gk:true},{d:1,m:1,f:1,gk:true}],
+  5:[{d:2,m:0,f:2,gk:true},{d:2,m:1,f:1,gk:true},{d:1,m:2,f:1,gk:true},{d:2,m:1,f:2,gk:false}],
+  6:[{d:3,m:0,f:2,gk:true},{d:2,m:0,f:3,gk:true},{d:2,m:2,f:1,gk:true},{d:2,m:1,f:2,gk:true},{d:1,m:3,f:1,gk:true}],
+  7:[{d:3,m:0,f:3,gk:true},{d:2,m:3,f:1,gk:true},{d:3,m:2,f:1,gk:true},{d:2,m:2,f:2,gk:true},{d:3,m:1,f:2,gk:true}],
+  8:[{d:4,m:0,f:3,gk:true},{d:3,m:0,f:4,gk:true},{d:3,m:3,f:1,gk:true},{d:2,m:3,f:2,gk:true},{d:3,m:2,f:2,gk:true}],
+  9:[{d:4,m:0,f:4,gk:true},{d:3,m:2,f:3,gk:true},{d:3,m:3,f:2,gk:true},{d:4,m:3,f:1,gk:true},{d:2,m:4,f:2,gk:true}],
+  10:[{d:5,m:0,f:4,gk:true},{d:4,m:0,f:5,gk:true},{d:4,m:3,f:2,gk:true},{d:3,m:4,f:2,gk:true},{d:4,m:4,f:1,gk:true}],
+  11:[{d:5,m:0,f:5,gk:true},{d:4,m:4,f:2,gk:true},{d:4,m:3,f:3,gk:true},{d:4,m:5,f:1,gk:true},{d:3,m:5,f:2,gk:true},{d:5,m:3,f:2,gk:true}]
+};
+function formName(f){ return f.d+"-"+f.m+"-"+f.f+"-"+(f.gk?1:0); }
+
+const KEY = "sideline-tracker-v1";
+let storageMode = "memory";
+const Store = {
+  async load(){
+    if(window.storage && window.storage.get){
+      try{ const r = await window.storage.get(KEY); storageMode="artifact";
+           if(r && r.value) return JSON.parse(r.value); return null; }
+      catch(e){ storageMode="artifact"; return null; }
+    }
+    try{ const s = localStorage.getItem(KEY); storageMode="local"; return s?JSON.parse(s):null; }
+    catch(e){ storageMode="memory"; return null; }
+  },
+  async save(obj){
+    const s = JSON.stringify(obj);
+    if(window.storage && window.storage.set){
+      try{ await window.storage.set(KEY, s); storageMode="artifact"; return; }catch(e){}
+    }
+    try{ localStorage.setItem(KEY, s); storageMode="local"; return; }catch(e){ storageMode="memory"; }
+  }
+};
+
+/* ---------------- state ---------------- */
+const DEFAULTS = {
+  v:1, roster:[],
+  settings:{
+    advanced:false, teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:6,
+    minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:2, rotate:true, confirmChanges:true, autoPlan:true,
+    warnLead:30, sound:true, vibrate:true, sun:false
+  },
+  game:newGame(), archive:[], lineups:[]
+};
+function newGame(){
+  return { log:[], seq:0, shift:1, period:1, running:false, startedAt:null, base:0,
+           priorTotal:0, periodOver:false, shiftStart:0, warned:false, alerted:false, adj:{}, next:null };
+}
+let S = JSON.parse(JSON.stringify(DEFAULTS));
+
+let saveTimer=null;
+function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>Store.save(S),400); }
+
+/* ---------------- clock ---------------- */
+function periodElapsed(){
+  const g=S.game;
+  let e = g.base + (g.running ? (Date.now()-g.startedAt)/1000 : 0);
+  return Math.min(e, S.settings.periodLen*60);
+}
+function gameElapsed(){ return S.game.priorTotal + periodElapsed(); }
+function periodRemaining(){ return Math.max(0, S.settings.periodLen*60 - periodElapsed()); }
+function shiftRemaining(){ return S.settings.shiftLen*60 - (gameElapsed() - S.game.shiftStart); }
+function fmt(sec){ sec = Math.max(0, Math.floor(sec)); return Math.floor(sec/60) + ":" + String(sec%60).padStart(2,"0"); }
+function fmt2(sec){ sec = Math.max(0, Math.floor(sec)); return String(Math.floor(sec/60)).padStart(2,"0") + ":" + String(sec%60).padStart(2,"0"); }
+function mins(sec){ return (Math.max(0,sec)/60).toFixed(1); }
+
+/* ---------------- derived time & stats ---------------- */
+function computeMatchScore(){
+  let us = 0, them = 0, usShots = 0, usSOG = 0, themShots = 0, themSOG = 0;
+  for(const e of S.game.log){
+    if(e.type === "GOAL"){ us++; usSOG++; usShots++; }
+    if(e.type === "SOG"){ usSOG++; usShots++; }
+    if(e.type === "SHOT"){ usShots++; }
+    if(e.type === "OPP_GOAL"){ them++; themSOG++; themShots++; }
+    if(e.type === "OPP_SOG"){ themSOG++; themShots++; }
+    if(e.type === "OPP_SHOT"){ themShots++; }
+  }
+  return {us, them, usShots, usSOG, themShots, themSOG};
+}
+
+/* compute() replays the whole log, and the render path asks for it dozens of times.
+   Cache it against everything that can change the answer: the log, the roster, manual
+   adjustments, and the clock (bucketed, so live minutes still tick). */
+let _stCache = null, _stKey = "", _stGen = 0;
+function invalidate(){ _stGen++; _stCache = null; }
+function computeKey(){
+  const adj = S.game.adj || {};
+  let a = 0; for(const k in adj) for(const b in adj[k]) a += adj[k][b];
+  return _stGen+"|"+S.game.log.length+"|"+S.roster.length+"|"+Math.floor(gameElapsed()*5)+"|"+a;
+}
+function compute(){
+  const k = computeKey();
+  if(_stCache && _stKey === k) return _stCache;
+  _stCache = _compute(); _stKey = k; return _stCache;
+}
+function _compute(){
+  const now = gameElapsed();
+  const st = {};
+  S.roster.forEach(p => st[p.id] = {GK:0,DEF:0,MID:0,FWD:0,total:0,onBand:null,onSince:null,lastOff:null,
+                                    n:{GK:0,DEF:0,MID:0,FWD:0}, nTotal:0,
+                                    goals:0, assists:0, saves:0, ga:0, yellows:0, reds:0, sinBinEnd:0, shots:0, sog:0});
+  const open = {};
+  const close = (pid,gt) => {
+    const o = open[pid]; if(!o) return;
+    if(st[pid]) { st[pid][o.band] += Math.max(0, gt-o.start); st[pid].lastOff = gt; }
+    delete open[pid];
+  };
+  const enter = (pid, band) => { if(st[pid]){ st[pid].n[band]++; st[pid].nTotal++; } };
+  
+  for(const e of S.game.log){
+    if(e.type==="ON"){ close(e.playerId, e.gt); open[e.playerId] = {band:e.band, start:e.gt}; enter(e.playerId, e.band); }
+    else if(e.type==="OFF"){ close(e.playerId, e.gt); }
+    else if(e.type==="MOVE"){ close(e.playerId, e.gt); open[e.playerId] = {band:e.band, start:e.gt}; enter(e.playerId, e.band); }
+    else if(e.type==="GOAL" && st[e.playerId]){ st[e.playerId].goals++; st[e.playerId].sog++; st[e.playerId].shots++; }
+    else if(e.type==="SOG" && st[e.playerId]){ st[e.playerId].sog++; st[e.playerId].shots++; }
+    else if(e.type==="SHOT" && st[e.playerId]){ st[e.playerId].shots++; }
+    else if(e.type==="ASSIST" && st[e.playerId]) st[e.playerId].assists++;
+    else if(e.type==="SAVE" && st[e.playerId]) st[e.playerId].saves++;
+    else if(e.type==="YELLOW" && st[e.playerId]){ st[e.playerId].yellows++; st[e.playerId].sinBinEnd = e.gt + ((S.settings.sinBinMins||5)*60); }
+    else if(e.type==="RED" && st[e.playerId]) st[e.playerId].reds++;
+    else if(e.type==="GA" && st[e.playerId]) st[e.playerId].ga++;
+  }
+  for(const pid in open){
+    const o = open[pid]; if(!st[pid]) continue;
+    st[pid][o.band] += Math.max(0, now-o.start);
+    st[pid].onBand = o.band; st[pid].onSince = o.start; st[pid].lastOff = null;
+  }
+  const adj = S.game.adj||{};
+  for(const pid in adj){ if(!st[pid]) continue; for(const b of BANDS) st[pid][b] += (adj[pid][b]||0); }
+  for(const pid in st){ const r=st[pid]; r.total = r.GK+r.DEF+r.MID+r.FWD; }
+  return st;
+}
+
+function computeSeasonStats(pid){
+  let goals=0, assists=0, saves=0, ga=0, yellows=0, reds=0, shots=0, sog=0;
+  S.archive.forEach(g => {
+    g.log.forEach(e => {
+      if(e.playerId !== pid) return;
+      if(e.type==="GOAL"){ goals++; sog++; shots++; }
+      if(e.type==="SOG"){ sog++; shots++; }
+      if(e.type==="SHOT"){ shots++; }
+      if(e.type==="ASSIST") assists++;
+      if(e.type==="SAVE") saves++;
+      if(e.type==="YELLOW") yellows++;
+      if(e.type==="RED") reds++;
+      if(e.type==="GA") ga++;
+    });
+  });
+  const st = compute();
+  if(st[pid]){
+    goals += st[pid].goals; assists += st[pid].assists; saves += st[pid].saves;
+    ga += st[pid].ga; yellows += st[pid].yellows; reds += st[pid].reds;
+    shots += st[pid].shots; sog += st[pid].sog;
+  }
+  return {goals, assists, saves, ga, yellows, reds, shots, sog};
+}
+
+function isSinBin(pid){
+  if(!S.settings.ycSinBin) return false;
+  const p = byId(pid);
+  if(!p || p.avail !== "available") return false;
+  const r = compute()[pid];
+  return !!r && r.sinBinEnd > gameElapsed();
+}
+function isRedCarded(pid){ const r = compute()[pid]; return !!r && r.reds > 0; }
+function isStale(pid){
+  if(!S.settings.advanced) return false;
+  const p = byId(pid);
+  if(!p || p.avail !== "available") return false;
+  const r = compute()[pid];
+  if(!r || r.onBand || r.reds > 0 || (S.settings.ycSinBin && r.sinBinEnd > gameElapsed())) return false;
+  return (gameElapsed() - (r.lastOff !== null ? r.lastOff : 0)) >= (S.settings.staleWarn || 10) * 60;
+}
+function formation(){
+  const list = FORMATIONS[S.settings.teamSize] || FORMATIONS[7];
+  return list[Math.min(S.settings.formationIdx || 0, list.length-1)];
+}
+function slotsFor(band){ const f = formation(); return band==="GK" ? (f.gk?1:0) : band==="DEF" ? f.d : band==="MID" ? f.m : f.f; }
+function available(p){ return p.avail === "available" && !isSinBin(p.id) && !isRedCarded(p.id); }
+function eligible(p, band){ return !p || !p.elig || p.elig[band] !== false; }
+function eligList(p){ return BANDS.filter(b => eligible(p,b)); }
+function newElig(){ return {GK:true,DEF:true,MID:true,FWD:true}; }
+
+/* ---------------- events ---------------- */
+function push(events, note){
+  invalidate();
+  const g = S.game; g.seq++; const gid = g.seq, t = Date.now(), gt = gameElapsed(), sh = g.shift;
+  events.forEach(e => g.log.push(Object.assign({eid:uid(), g:gid, t, gt, sh, period:g.period}, e)));
+  if(note) g.log.push({eid:uid(), g:gid, t, gt, sh, period:g.period, type:"NOTE", note});
+  save();
+}
+function undoLast(){
+  const log = S.game.log; if(!log.length){ toast("Nothing to undo"); return; }
+  const gid = log[log.length-1].g;
+  while(log.length && log[log.length-1].g === gid) log.pop();
+  invalidate(); save(); render(); toast("Undone");
+}
+function beginNewShift(){
+  /* don't burn a shift number on a shift that never recorded anything — it leaves
+     gaps in the history that read like lost data */
+  const cur = S.game.shift;
+  if(S.game.log.some(e => (e.sh||1) === cur)) S.game.shift++;
+  resetShiftClock(); S.game.next = null; S.game.planCleared = false;
+}
+function resetShiftClock(){ S.game.shiftStart = gameElapsed(); S.game.warned = false; S.game.alerted = false; }
+
+/* ---------------- the next shift ---------------- */
+/* The coach shouldn't have to remember to plan. Whenever there's a live lineup and
+   no plan yet, quietly build one so the buzzer is always one tap from acted on. */
+function maybeAutoPlan(){
+  if(!S.settings.autoPlan || S.game.planCleared) return;
+  if(!S.game.log.length || nextCount()) return;
+  const st = compute();
+  if(!S.roster.some(p => st[p.id].onBand)) return;
+  autoFillNext();
+}
+/* ---------------- saved lineups ---------------- */
+function currentArrangement(){
+  const st = compute(), out = {};
+  let any = false;
+  BANDS.forEach(b => {
+    out[b] = S.roster.filter(p => st[p.id].onBand === b).map(p => p.id);
+    if(out[b].length) any = true;
+  });
+  if(!any){ /* nothing on the field — fall back to whatever is planned */
+    const n = ensureNext(); let planned = false;
+    BANDS.forEach(b => { out[b] = n[b].filter(Boolean); if(out[b].length) planned = true; });
+    if(!planned) return null;
+  }
+  return out;
+}
+function saveLineup(name){
+  const arr = currentArrangement();
+  if(!arr){ toast("Put a lineup on the field or in the plan first"); return false; }
+  S.lineups.unshift({id:uid(), name:name, at:Date.now(), size:S.settings.teamSize,
+                     form:S.settings.formationIdx, slots:arr});
+  S.lineups = S.lineups.slice(0,12);
+  save(); return true;
+}
+/* Loading writes into the plan rather than the field, so you always get to look
+   at it before it goes on — and missing players simply leave a gap. */
+function loadLineup(id){
+  const L = S.lineups.find(x => x.id === id); if(!L) return;
+  if(L.size !== S.settings.teamSize || L.form !== S.settings.formationIdx){
+    S.settings.teamSize = L.size; S.settings.formationIdx = L.form;
+  }
+  S.game.next = null; S.game.planCleared = false;
+  const n = ensureNext();
+  let placed = 0, skipped = 0;
+  BANDS.forEach(b => {
+    (L.slots[b] || []).forEach(pid => {
+      const p = byId(pid);
+      if(!p || !available(p)){ if(p) skipped++; return; }
+      const i = n[b].indexOf(null);
+      if(i < 0){ skipped++; return; }
+      n[b][i] = pid; placed++;
+    });
+  });
+  save();
+  toast(placed + " placed" + (skipped ? ", " + skipped + " unavailable or no room" : ""));
+}
+
+/* ---------------- pre-game check-in ---------------- */
+let checkIn = null;
+function openCheckIn(){
+  checkIn = {};
+  S.roster.forEach(p => checkIn[p.id] = p.avail === "available");
+  drawCheckIn();
+}
+function drawCheckIn(){
+  const here = S.roster.filter(p => checkIn[p.id]).length;
+  const body =
+    '<div class="muted" style="margin-bottom:8px">Tap anyone who is not here. '+here+' of '+S.roster.length+' available.</div>'+
+    '<div class="row" style="margin-bottom:10px"><button class="btn ghost" id="ci-all">Everyone is here</button>'+
+    '<button class="btn ghost" id="ci-none">Nobody yet</button></div>'+
+    S.roster.map(p =>
+      '<button class="cirow'+(checkIn[p.id]?" on":"")+'" data-ci="'+p.id+'">'+
+        avatar(p)+'<span class="nm">'+esc(p.name)+'</span>'+
+        '<span class="tag">'+(checkIn[p.id]?"Here":"Out")+'</span></button>').join("");
+  modal("Who is here?", body, "Save ("+here+" available)", ()=>{
+    S.roster.forEach(p => { p.avail = checkIn[p.id] ? "available" : "out"; });
+    invalidate(); save(); render(); toast(here+" players available");
+  });
+  document.querySelectorAll("#modalbody [data-ci]").forEach(el => el.addEventListener("click", ()=>{
+    checkIn[el.dataset.ci] = !checkIn[el.dataset.ci]; drawCheckIn();
+  }));
+  document.getElementById("ci-all").addEventListener("click", ()=>{ S.roster.forEach(p=>checkIn[p.id]=true); drawCheckIn(); });
+  document.getElementById("ci-none").addEventListener("click", ()=>{ S.roster.forEach(p=>checkIn[p.id]=false); drawCheckIn(); });
+}
+
+function bestReplacement(band, excludeId){
+  const st = compute();
+  return S.roster.filter(p => p.id !== excludeId && !st[p.id].onBand && available(p) && eligible(p, band))
+    .sort((a,b) => {
+      if(st[a.id].total !== st[b.id].total) return st[a.id].total - st[b.id].total;
+      return (parseInt(a.number)||99) - (parseInt(b.number)||99);
+    })[0];
+}
+/* Somebody went down. Get them off first, then offer the fairest replacement. */
+function pullPlayer(pid, reason){
+  const st = compute(), band = st[pid].onBand;
+  if(!band) return;
+  push([{type:"OFF", playerId:pid}]);
+  const sub = bestReplacement(band, pid);
+  render();
+  if(!sub){ toast(first(pid)+" off — nobody available to come on"); return; }
+  modal(reason || "Player off",
+    '<div style="font-size:15px"><b>'+esc(first(pid))+'</b> is off at '+BANDNAME[band]+'.<br><br>'+
+    'Bring on <b>'+esc(sub.name)+'</b>? <span class="muted">('+fmt(st[sub.id].total)+' played — least of anyone available)</span></div>',
+    "Bring "+first(sub.id)+" on",
+    ()=>{ push([{type:"ON", playerId:sub.id, band}]); render(); toast(first(sub.id)+" on at "+BANDNAME[band]); },
+    "Leave the spot open");
+}
+function ensureNext(){
+  const n = S.game.next || {};
+  BANDS.forEach(b => {
+    const k = slotsFor(b); n[b] = (n[b] || []).slice(0, k).map(id => byId(id) ? id : null);
+    while(n[b].length < k) n[b].push(null);
+  });
+  S.game.next = n; return n;
+}
+function nextSlotOf(pid){
+  const n = ensureNext();
+  for(const b of BANDS){ const i = n[b].indexOf(pid); if(i >= 0) return {band:b, i}; }
+  return null;
+}
+function nextCount(){ return BANDS.reduce((a,b) => a + ensureNext()[b].filter(Boolean).length, 0); }
+function planInto(pid, band, i){
+  const n = ensureNext(), was = nextSlotOf(pid), sitting = n[band][i];
+  n[band][i] = pid;
+  if(was) n[was.band][was.i] = (was.band === band && was.i === i) ? null : (sitting || null);
+  save();
+}
+function planClear(pid){ const was = nextSlotOf(pid); if(was){ S.game.next[was.band][was.i] = null; save(); } }
+function resolvePlan(){
+  const st = compute(), n = ensureNext(), planned = {}, out = {};
+  BANDS.forEach(b => n[b].forEach(id => { if(id) planned[id] = 1; }));
+  BANDS.forEach(b => {
+    const holding = S.roster.filter(p => st[p.id].onBand === b && !planned[p.id]).map(p => p.id);
+    out[b] = n[b].map(id => id || holding.shift() || null);
+  });
+  return out;
+}
+function planDiff(){
+  const st = compute(), res = resolvePlan(), keep = {}, ev = [];
+  BANDS.forEach(b => res[b].forEach(id => { if(id) keep[id] = b; }));
+  S.roster.forEach(p => { if(st[p.id].onBand && !keep[p.id]) ev.push({type:"OFF", playerId:p.id}); });
+  Object.keys(keep).forEach(id => {
+    const cur = st[id].onBand;
+    if(!cur) ev.push({type:"ON", playerId:id, band:keep[id]});
+    else if(cur !== keep[id]) ev.push({type:"MOVE", playerId:id, band:keep[id]});
+  });
+  return ev;
+}
+function autoFillNext(){
+  const st = compute(), n = ensureNext();
+  BANDS.forEach(b => n[b] = n[b].map(()=>null));
+  const now = gameElapsed();
+
+  const slots = [];
+  BANDS.forEach(b => { for(let i=0;i<slotsFor(b);i++) slots.push({band:b, i}); });
+  const size = slots.length;
+  if(!size){ save(); return; }
+
+  const onNow = {};
+  S.roster.forEach(p => { if(st[p.id].onBand) onNow[p.id] = st[p.id].onBand; });
+
+  /* locked = must stay on: the keeper, and anyone who hasn't had their minimum stint */
+  const locked = {};
+  const minS = S.settings.minStint || 0;
+  if(minS > 0) S.roster.forEach(p => {
+    const r = st[p.id];
+    if(r.onBand && available(p) && (now - r.onSince) < minS) locked[p.id] = r.onBand;
+  });
+  const keeper = S.roster.find(p => st[p.id].onBand === "GK");
+  if(slotsFor("GK") && keeper && available(keeper) && eligible(keeper,"GK")) locked[keeper.id] = "GK";
+
+  const byMinutes = (a,b) => {
+    if(st[a.id].total !== st[b.id].total) return st[a.id].total - st[b.id].total;
+    const la = st[a.id].lastOff == null ? -1 : st[a.id].lastOff, lb = st[b.id].lastOff == null ? -1 : st[b.id].lastOff;
+    if(la !== lb) return la - lb;
+    return (parseInt(a.number)||99) - (parseInt(b.number)||99);
+  };
+
+  /* A. pick the squad — locked players, then whoever has played least */
+  const squad = S.roster.filter(p => locked[p.id]);
+  S.roster.filter(p => available(p) && !locked[p.id]).sort(byMinutes)
+    .forEach(p => { if(squad.length < size) squad.push(p); });
+
+  /* B. assign positions, holding everyone who is already on the field where they are */
+  const free = slots.slice();
+  const take = band => { const k = free.findIndex(s => s.band === band); return k < 0 ? null : free.splice(k,1)[0]; };
+  const spot = {};
+  squad.forEach(p => {
+    const b = locked[p.id] || onNow[p.id];
+    if(b && eligible(p,b)){ const s = take(b); if(s) spot[p.id] = s; }
+  });
+  /* whoever is left is coming off the bench — give them the position they've played least */
+  squad.filter(p => !spot[p.id]).forEach(p => {
+    const fits = free.filter(s => eligible(p, s.band));
+    const pick = (fits.length ? fits : free).slice().sort((a,b) => {
+      if(a.band === "GK" && b.band !== "GK") return 1;
+      if(b.band === "GK" && a.band !== "GK") return -1;
+      return st[p.id][a.band] - st[p.id][b.band];
+    })[0];
+    if(pick){ free.splice(free.indexOf(pick),1); spot[p.id] = pick; }
+  });
+
+  /* C. rotate front to back, but only a few players per shift */
+  let budget = S.settings.rotate ? (S.settings.maxSwitch == null ? 2 : S.settings.maxSwitch) : 0;
+  const held = () => squad.filter(p => onNow[p.id] && spot[p.id] && spot[p.id].band === onNow[p.id] && spot[p.id].band !== "GK");
+  while(budget >= 2){
+    let best = null;
+    const hs = held();
+    for(const a of hs) for(const b of hs){
+      if(a.id === b.id) continue;
+      const ba = spot[a.id].band, bb = spot[b.id].band;
+      if(ba === bb) continue;
+      if(!eligible(a,bb) || !eligible(b,ba)) continue;
+      /* gain = how much more balanced both players get by trading places */
+      const gain = (st[a.id][ba] - st[a.id][bb]) + (st[b.id][bb] - st[b.id][ba]);
+      if(gain > 120 && (!best || gain > best.gain)) best = {a, b, gain};
+    }
+    if(!best) break;
+    const tmp = spot[best.a.id]; spot[best.a.id] = spot[best.b.id]; spot[best.b.id] = tmp;
+    onNow[best.a.id] = spot[best.a.id].band; onNow[best.b.id] = spot[best.b.id].band;
+    budget -= 2;
+  }
+
+  Object.keys(spot).forEach(pid => { const s = spot[pid]; n[s.band][s.i] = pid; });
+  save();
+}
+function lastBandOf(pid){
+  for(let i=S.game.log.length-1;i>=0;i--){
+    const e = S.game.log[i];
+    if(e.playerId===pid && (e.type==="ON"||e.type==="MOVE")) return e.band;
+  }
+  return null;
+}
+function nextUpIds(k){
+  const st = compute();
+  return S.roster.filter(p => !st[p.id].onBand && available(p)).sort((a,b) => st[a.id].total - st[b.id].total).slice(0,k).map(p => p.id);
+}
+
+/* ---------------- audio / haptics / wake ---------------- */
+let actx = null;
+function primeAudio(){
+  try{
+    if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state === "suspended") actx.resume();
+    const o = actx.createOscillator(), g = actx.createGain();
+    g.gain.value = 0; o.connect(g); g.connect(actx.destination);
+    o.start(); o.stop(actx.currentTime + 0.01);
+  }catch(e){}
+}
+document.addEventListener("pointerdown", primeAudio, true);
+function beep(freq, start, dur, vol){
+  if(!actx) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = "square"; o.frequency.value = freq;
+  const t0 = actx.currentTime + start;
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol, t0+0.015);
+  g.gain.setValueAtTime(vol, t0+dur-0.03); g.gain.linearRampToValueAtTime(0, t0+dur);
+  o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0+dur+0.02);
+}
+function alarm(kind){
+  if(S.settings.sound){
+    primeAudio();
+    if(kind === "warn") beep(660,0,.16,.25); 
+    else for(let i=0;i<3;i++){ beep(880, i*.42, .18, .3); beep(660, i*.42+.2, .18, .3); }
+  }
+  if(S.settings.vibrate && navigator.vibrate) navigator.vibrate(kind==="warn" ? [120] : [200,90,200,90,350]);
+  if(kind !== "warn"){
+    const f = document.getElementById("flash");
+    f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
+  }
+}
+let wakeLock = null;
+async function wake(on){
+  try{
+    if(on && "wakeLock" in navigator && !wakeLock){
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", ()=>{ wakeLock=null; });
+    } else if(!on && wakeLock){ await wakeLock.release(); wakeLock=null; }
+  }catch(e){ wakeLock = null; }
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "visible"){ if(S.game.running) wake(true); tick(); render(); }
+});
+
+/* ---------------- clock control ---------------- */
+function startClock(){
+  if(S.game.periodOver){ toast(S.game.period >= S.settings.periods ? "Game over" : "Start next period on Clock tab"); return; }
+  S.game.running = true; S.game.startedAt = Date.now();
+  if(!S.game.log.length && !S.game.shiftStart) resetShiftClock();
+  wake(true); save(); render();
+}
+function stopClock(){
+  if(S.game.running){ S.game.base = periodElapsed(); S.game.running = false; S.game.startedAt = null; }
+  wake(false); save(); render();
+}
+function toggleClock(){ S.game.running ? stopClock() : startClock(); }
+function endPeriodNow(){ stopClock(); S.game.periodOver = true; push([{type:"PERIOD_END"}]); alarm("end"); render(); }
+function nextPeriod(){
+  S.game.priorTotal += S.game.base; S.game.base = 0; S.game.period++; S.game.periodOver = false;
+  beginNewShift(); save();
+  /* halftime is when coaches reset everything — land them on the lineup, not the clock */
+  if(S.settings.autoPlan){ maybeAutoPlan(); if(nextCount()){ activeTab = "next"; } }
+  render();
+  toast("Period "+S.game.period+" — check your lineup");
+}
+
+function tick(){
+  invalidate();
+  const g = S.game, s = S.settings;
+  if(g.running && periodElapsed() >= s.periodLen*60 && !g.periodOver){ endPeriodNow(); return; }
+  if(g.running && !g.periodOver){
+    const rem = shiftRemaining(), guard = periodRemaining() <= 45;
+    if(!g.warned && rem <= s.warnLead && rem > 0 && !guard && s.warnLead > 0){ g.warned = true; alarm("warn"); }
+    if(!g.alerted && rem <= 0 && !guard){ g.alerted = true; alarm("end"); }
+  }
+  checkSinBin();
+  paintClocks(); paintLive();
+}
+/* a sin bin that expires silently is useless — watch for it and say so */
+let _binWatch = {};
+function checkSinBin(){
+  if(!S.settings.ycSinBin) return;
+  const st = compute(), now = gameElapsed(), freed = [];
+  S.roster.forEach(p => {
+    const end = st[p.id] ? st[p.id].sinBinEnd : 0;
+    if(!end || p.avail !== "available") return;
+    if(end > now){ _binWatch[p.id] = end; }
+    else if(_binWatch[p.id]){ delete _binWatch[p.id]; freed.push(p); }
+  });
+  if(freed.length){
+    alarm("warn");
+    toast(freed.map(p => p.name.split(" ")[0]).join(", ") + (freed.length>1 ? " are" : " is") + " available again");
+    render();
+  }
+}
+function paintClocks(){
+  const s = S.settings;
+  document.getElementById("tb-clock").textContent = fmt2(periodElapsed());
+  document.getElementById("tb-period").textContent = S.game.periodOver ? "Period " + S.game.period + " over" : "Period " + S.game.period + " of " + s.periods;
+  const rem = shiftRemaining();
+  document.getElementById("tb-shiftval").textContent = (rem<0?"+":"") + fmt(Math.abs(rem));
+  document.getElementById("tb-go").textContent = S.game.running ? "PAUSE" : "START";
+  document.getElementById("tb-go").classList.toggle("running", S.game.running);
+  document.getElementById("topbar").classList.toggle("over", rem <= 0);
+  
+  const sc = computeMatchScore();
+  document.getElementById("sc-us").textContent = sc.us;
+  document.getElementById("sc-them").textContent = sc.them;
+
+  const bc = document.getElementById("big-clock");
+  if(bc){
+    bc.textContent = fmt2(periodElapsed());
+    const br = document.getElementById("big-shift"); if(br) br.textContent = (rem<0?"+":"") + fmt(Math.abs(rem));
+    const bp = document.getElementById("big-left"); if(bp) bp.textContent = fmt(periodRemaining()) + " left";
+  }
+}
+function paintLive(){
+  const st = compute();
+  document.querySelectorAll("[data-live]").forEach(el => {
+    const [pid, what] = el.dataset.live.split("|"); const r = st[pid]; if(!r) return;
+    if(what === "stint") el.textContent = r.onBand ? fmt(gameElapsed()-r.onSince) : "";
+    else el.textContent = fmt(r[what] === undefined ? r.total : r[what]);
+  });
+  document.querySelectorAll("[data-livec]").forEach(el => {
+    const [pid, what] = el.dataset.livec.split("|"); const r = st[pid]; if(!r) return;
+    const c = what === "total" ? r.nTotal : r.n[what]; el.textContent = c ? "×"+c : "";
+  });
+}
+
+/* ---------------- helpers ---------------- */
+function colorOf(num){ const n = parseInt(num); const h = isNaN(n) ? 150 : (n*47)%360; return "hsl("+h+",62%,"+(document.body.classList.contains("sun")?"30%":"62%")+")"; }
+function avatar(p, cls){
+  if(p.photo) return '<img class="av '+(cls||"")+'" src="'+p.photo+'" alt="">';
+  return '<div class="avn '+(cls||"")+'" style="background:'+colorOf(p.number)+'">'+(p.number||"–")+'</div>';
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function uid(){ return "p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function byId(id){ return S.roster.find(p => p.id===id); }
+
+let toastTimer=null;
+function toast(msg){
+  document.querySelectorAll(".toast").forEach(t => t.remove());
+  const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; document.body.appendChild(d);
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>d.remove(), 2200);
+}
+let modalOk = null;
+function modal(title, bodyHTML, okText, onOk, cancelText){
+  document.getElementById("modaltitle").textContent = title;
+  document.getElementById("modalbody").innerHTML = bodyHTML;
+  const ok = document.getElementById("modalok");
+  ok.textContent = okText || "OK"; ok.style.display = okText === null ? "none" : "";
+  document.getElementById("modalcancel").textContent = cancelText || "Cancel";
+  modalOk = onOk;
+  document.getElementById("modalwrap").classList.add("show");
+}
+function closeModal(){ document.getElementById("modalwrap").classList.remove("show"); modalOk=null; }
+document.getElementById("modalcancel").addEventListener("click", closeModal);
+document.getElementById("modalok").addEventListener("click", ()=>{ const fn = modalOk; if(fn && fn() === false) return; closeModal(); });
+
+/* ---------------- tabs ---------------- */
+const TABS = [
+  {id:"field", label:"Field", icon:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><circle cx="12" cy="12" r="2.5"/>'},
+  {id:"next", label:"Next", icon:'<path d="M4 12h13"/><path d="M12 7l5 5-5 5"/><path d="M20 5v14"/>'},
+  {id:"clock", label:"Clock", icon:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'},
+  {id:"times", label:"Minutes", icon:'<path d="M4 6h16M4 12h16M4 18h10"/>'},
+  {id:"log", label:"History", icon:'<path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/>'},
+  {id:"roster", label:"Roster", icon:'<circle cx="9" cy="9" r="3"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 8h5M18.5 5.5v5"/>'},
+  {id:"help", label:"Help", icon:'<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.2 2.9c-.6.2-.8.7-.8 1.2v.4"/><path d="M12 17h.01"/>'},
+  {id:"setup", label:"Setup", icon:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>'}
+];
+let activeTab = "field";
+function buildTabs(){
+  const nav = document.getElementById("tabs");
+  nav.innerHTML = TABS.map(t => '<button data-tab="'+t.id+'"><svg viewBox="0 0 24 24">'+t.icon+'</svg>'+t.label+'</button>').join("");
+  nav.querySelectorAll("button").forEach(b => b.addEventListener("click", ()=>{ activeTab = b.dataset.tab; selected = null; nextSel = null; render(); document.querySelector("main").scrollTop = 0; }));
+}
+function paintTabs(){
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTab));
+  TABS.forEach(t => document.getElementById("v-"+t.id).classList.toggle("active", t.id === activeTab));
+}
+
+/* ============================================================
+   FIELD
+   ============================================================ */
+let selected = null; 
+
+function renderField(){
+  const st = compute(), f = formation(), onField = {};
+  BANDS.forEach(b => onField[b] = []);
+  S.roster.forEach(p => { if(st[p.id].onBand) onField[st[p.id].onBand].push(p); });
+
+  const nextIds = nextUpIds(Math.max(2, Math.ceil(S.settings.teamSize/3))), order = ["FWD","MID","DEF","GK"];
+  let widest = 1;
+  order.forEach(b => widest = Math.max(widest, slotsFor(b), onField[b].length));
+  const inner = Math.max(240, (window.innerWidth || 390) - 44);
+  const cw = Math.max(62, Math.min(108, Math.floor((inner - 6*(widest-1)) / widest)));
+  const avs = Math.max(28, Math.min(56, Math.round(cw * 0.54)));
+
+  let pitch = '<div id="pitch" style="--cw:'+cw+'px;--avs:'+avs+'px">';
+  order.forEach(b => {
+    const slots = slotsFor(b); if(slots === 0 && onField[b].length === 0) return;
+    pitch += '<div class="band">';
+    for(let i=0;i<Math.max(slots, onField[b].length);i++){
+      const p = onField[b][i];
+      if(p) pitch += chip(p, st, b, "field");
+      else pitch += '<button class="chip empty '+(b==="GK"?"gkslot ":"")+((selected && selected.t==="s" && selected.band===b)?"sel":"")+'" data-slot="'+b+'">+ '+BANDNAME[b]+'</button>';
+    }
+    pitch += '</div><div class="bandlab">'+BANDNAME[b]+(slots?" · "+slots:"")+'</div>';
+  });
+  pitch += '</div>';
+
+  const bench = S.roster.filter(p => !st[p.id].onBand);
+  let benchHTML = '<div id="benchzone"><div id="bench">' + (bench.length ? bench.map(p => chip(p, st, null, "bench", nextIds.includes(p.id))).join("") : '<div class="muted">Everyone on the roster is on the field.</div>') + '</div></div>';
+
+  const diff = nextCount() ? planDiff() : [];
+  const changes = diff.length;
+  const onCt = diff.filter(e=>e.type==="ON").length, offCt = diff.filter(e=>e.type==="OFF").length, mvCt = diff.filter(e=>e.type==="MOVE").length;
+  const banner = changes
+    ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>Next shift is ready</b> <span class="muted">· '+onCt+' on · '+offCt+' off'+(mvCt?' · '+mvCt+' switching':'')+'</span><div class="row" style="margin-top:8px"><button class="btn primary" id="send-next">Send them on</button><button class="btn ghost" id="edit-next">Edit plan</button></div></div>'
+    : '<div class="row" style="margin-bottom:10px"><button class="btn primary" id="plan-next">Plan next shift</button></div>';
+
+  /* before kickoff the useful buttons are different ones */
+  const preBar = !S.game.log.length
+    ? '<div class="row" style="margin-bottom:10px"><button class="btn" id="f-checkin">Who is here?</button>'+
+      '<button class="btn" id="f-lineup">Load a lineup</button></div>' : "";
+
+  /* the question a coach asks between whistles, answered without changing tabs */
+  const upIds = nextUpIds(3);
+  const upStrip = upIds.length && S.roster.some(p => st[p.id].onBand)
+    ? '<div class="upnext"><span class="uplab">Up next</span>'+
+      upIds.map(id => { const p = byId(id);
+        return '<span class="uppl">'+avatar(p)+esc(p.name.split(" ")[0])+'</span>'; }).join("")+
+      '</div>' : "";
+
+  if(!S.roster.length){
+    document.getElementById("v-field").innerHTML =
+      '<div class="card"><h2>Let\'s get you set up</h2>'+
+      '<div class="startrow"><b>1</b><div>Add your players on the <b>Roster</b> tab — a name and a number is enough.</div></div>'+
+      '<div class="startrow"><b>2</b><div>Pick your game format on the <b>Setup</b> tab. It comes set to 7 v 7.</div></div>'+
+      '<div class="startrow"><b>3</b><div>Come back here, tap an open spot, then tap the player who goes there.</div></div>'+
+      '<div class="row" style="margin-top:12px"><button class="btn primary" id="go-roster">Add players</button>'+
+      '<button class="btn ghost" id="go-help">How it works</button></div></div>';
+    document.getElementById("go-roster").addEventListener("click", ()=>{ activeTab="roster"; render(); });
+    document.getElementById("go-help").addEventListener("click", ()=>{ activeTab="help"; render(); });
+    return;
+  }
+
+  document.getElementById("v-field").innerHTML =
+    banner + preBar + upStrip + pitch + '<div class="row" style="margin-bottom:10px"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div><h3>Bench</h3>' + benchHTML +
+    (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap an open spot then a player, tap a player then a spot, or tap two players to swap them. Press and hold to drag instead. Changes here count as mid-shift swaps.</div>');
+
+  document.querySelectorAll("#v-field [data-chip]").forEach(el => {
+    el.addEventListener("click", ()=>{ if(!suppressClick) tapChip(el.dataset.chip, el.dataset.kind); });
+    armDrag(el);
+  });
+  document.querySelectorAll("#v-field [data-slot]").forEach(el => el.addEventListener("click", ()=>{ if(!suppressClick) tapSlot(el.dataset.slot); }));
+  
+  if(selected && selected.t === "p"){
+    const selid = selected.id;
+    document.querySelectorAll('#ev-goal').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'GOAL', 'Goal — '+first(selid)+' (counts as a shot on goal too)')));
+    document.querySelectorAll('#ev-sog').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'SOG', 'Shot on goal — '+first(selid))));
+    document.querySelectorAll('#ev-shot').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'SHOT', 'Shot — '+first(selid))));
+    document.querySelectorAll('#ev-ast').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'ASSIST', 'Assist — '+first(selid))));
+    document.querySelectorAll('#ev-save').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'SAVE', 'Save — '+first(selid))));
+    document.querySelectorAll('#ev-yel').forEach(e=>e.addEventListener('click', ()=>{
+      const evs = [{type: 'YELLOW', playerId: selid}];
+      const bin = S.settings.ycSinBin;
+      if(bin && st[selid].onBand) evs.push({type: 'OFF', playerId: selid});
+      push(evs); selected = null; render();
+      toast(bin ? "Yellow card — "+first(selid)+" to the sin bin" : "Yellow card recorded for "+first(selid));
+    }));
+    document.querySelectorAll('#ev-red').forEach(e=>e.addEventListener('click', ()=>{
+      const evs = [{type: 'RED', playerId: selid}];
+      if(st[selid].onBand) evs.push({type: 'OFF', playerId: selid});
+      push(evs); selected = null; render(); toast("Red card — "+first(selid)+" is out for the rest of this game");
+    }));
+  }
+
+  const ci = document.getElementById("f-checkin"); if(ci) ci.addEventListener("click", openCheckIn);
+  const fl = document.getElementById("f-lineup"); if(fl) fl.addEventListener("click", openLineups);
+  const goNext = document.getElementById("plan-next"); if(goNext) goNext.addEventListener("click", ()=>{ activeTab = "next"; render(); });
+  const ed = document.getElementById("edit-next"); if(ed) ed.addEventListener("click", ()=>{ activeTab = "next"; render(); });
+  const sn = document.getElementById("send-next"); if(sn) sn.addEventListener("click", sendNextShift);
+  document.getElementById("reset-shift").addEventListener("click", ()=>{ beginNewShift(); save(); render(); toast("Shift "+S.game.shift+" started"); });
+  document.getElementById("undo").addEventListener("click", undoLast);
+  const cs = document.getElementById("clear-sel"); if(cs) cs.addEventListener("click", ()=>{ selected=null; render(); });
+  const sb = document.getElementById("sub-off");
+  if(sb) sb.addEventListener("click", ()=>{
+    const pid = selected.id;
+    confirmChange("Take <b>"+esc(first(pid))+"</b> off, leaving the spot open",
+      ()=>{ push([{type:"OFF", playerId:pid}]); toast(first(pid)+" off"); render(); });
+    selected = null; render();
+  });
+  const hb = document.getElementById("sub-hurt");
+  if(hb) hb.addEventListener("click", ()=>{ const pid = selected.id; selected = null; pullPlayer(pid, "Sub out now"); });
+}
+
+function pushEvent(pid, type, msg){ push([{type, playerId: pid}]); selected = null; render(); toast(msg); }
+function chip(p, st, band, kind, isNext){
+  const r = st[p.id], sel = selected && selected.t === "p" && selected.id === p.id;
+  const sinbin = isSinBin(p.id), stale = kind === "bench" && isStale(p.id);
+  const unavail = (!available(p) && !sinbin) || p.avail !== "available";
+  let flag = "";
+  if(isNext) flag = '<span class="flag">NEXT</span>';
+  else if(sinbin) flag = '<span class="flag" style="color:var(--alert)">SIN BIN</span>';
+  else if(unavail) flag = '<span class="flag" style="color:var(--alert)">OUT</span>';
+  else if(stale) flag = '<span class="flag" style="color:var(--warn)">STALE</span>';
+  return '<button class="chip'+(sel?" sel":"")+(band==="GK"?" gkslot":"")+(isNext?" next":"")+(stale?" stale":"")+(sinbin?" sinbin":"")+'"'+
+    (unavail?' style="opacity:.42"':'')+ ' data-chip="'+p.id+'" data-kind="'+kind+'">'+ flag + avatar(p) +
+    '<span class="nm">'+esc(p.name.split(" ")[0])+'</span>'+
+    '<span class="tm mono" data-live="'+p.id+'|'+(kind==="field"?"stint":"total")+'"></span></button>';
+}
+function selbar(st){
+  if(selected.t === "s"){
+    return '<div class="selbar"><b>'+BANDNAME[selected.band]+'</b> spot is open — tap the player you want there.<div class="row" style="margin-top:8px"><button class="btn ghost" id="clear-sel">Clear</button></div></div>';
+  }
+  const p = byId(selected.id); if(!p) return "";
+  const isField = !!st[p.id].onBand;
+  const evts = S.settings.advanced ? `
+    <div class="ev-grid">
+       <button class="btn ghost" id="ev-goal">Goal</button>
+       <button class="btn ghost" id="ev-ast">Assist</button>
+       <button class="btn ghost" id="ev-sog">SOG</button>
+       <button class="btn ghost" id="ev-shot">Shot</button>
+       ${isField && st[p.id].onBand === 'GK' ? '<button class="btn ghost" id="ev-save">Save</button>' : '<div></div>'}
+       <button class="btn ghost" id="ev-yel" style="color:var(--warn);border-color:var(--warn)">Yellow</button>
+       <button class="btn ghost" id="ev-red" style="color:var(--alert);border-color:var(--alert)">Red</button>
+    </div>` : '';
+  return '<div class="selbar"><b>'+esc(p.name)+'</b> selected — '+
+    (isField ? "tap a bench player to sub them in, an open spot to move them, or another field player to swap." : "tap an open spot or the player they should replace.")+
+    '<div class="row" style="margin-top:8px">'+
+      (isField ? '<button class="btn warn" id="sub-hurt">Hurt — sub out now</button>' : '')+
+      '<button class="btn ghost" id="clear-sel">Clear</button></div>'+
+    (isField ? '<div class="row" style="margin-top:8px"><button class="btn ghost" id="sub-off">Take off, leave spot open</button></div>' : '')+
+    evts+'</div>';
+}
+function first(id){ const p = byId(id); return p ? p.name.split(" ")[0] : "Player"; }
+
+/* Every way of changing the field goes through here, so tapping and dragging behave
+   the same way and the wording matches what is actually about to happen. */
+function confirmChange(text, run){
+  if(!S.settings.confirmChanges){ run(); return; }
+  modal("Make this change?", '<div style="font-size:15px">'+text+'</div>', "Do it", run);
+}
+function describePair(aId, bId){
+  const st = compute(), aOn = st[aId].onBand, bOn = st[bId].onBand;
+  if(aOn && bOn) return "Switch <b>"+esc(first(aId))+"</b> ("+BANDNAME[aOn]+") and <b>"+esc(first(bId))+"</b> ("+BANDNAME[bOn]+")";
+  if(!aOn && !bOn) return "Both are on the bench";
+  const inId = aOn ? bId : aId, outId = aOn ? aId : bId;
+  return "Bring <b>"+esc(first(inId))+"</b> on for <b>"+esc(first(outId))+"</b> at "+BANDNAME[st[outId].onBand];
+}
+function describePlace(pid, band){
+  const st = compute();
+  return (st[pid].onBand ? "Move <b>" : "Bring <b>")+esc(first(pid))+"</b> "+
+         (st[pid].onBand ? "from "+BANDNAME[st[pid].onBand]+" to " : "on at ")+BANDNAME[band];
+}
+
+function doPlace(pid, band){
+  const st = compute(), p = byId(pid);
+  if(st[pid].onBand === band){ toast(first(pid)+" is already at "+BANDNAME[band]); return; }
+  if(st[pid].onBand){ push([{type:"MOVE", playerId:pid, band}]); }
+  else {
+    if(!available(p)){ toast(first(pid)+" is unavailable/in Sin Bin"); return; }
+    push([{type:"ON", playerId:pid, band}]);
+  }
+  toast(eligible(p, band) ? first(pid)+" → "+BANDNAME[band] : first(pid)+" isn't listed for "+BANDNAME[band]+" — placed anyway");
+}
+function doPair(aId, bId){
+  if(aId === bId) return;
+  const st = compute(), aOn = !!st[aId].onBand, bOn = !!st[bId].onBand;
+  if(aOn && bOn){
+    const ba = st[aId].onBand, bb = st[bId].onBand;
+    if(ba === bb){ toast("Both are already at "+BANDNAME[ba]); return; }
+    push([{type:"MOVE", playerId:aId, band:bb},{type:"MOVE", playerId:bId, band:ba}]);
+    toast(first(aId)+" and "+first(bId)+" switched");
+  } else if(!aOn && !bOn){
+    toast("Drag onto the field, not onto another bench player");
+  } else {
+    const incoming = aOn ? bId : aId, outgoing = aOn ? aId : bId;
+    if(!available(byId(incoming))){ toast(first(incoming)+" is unavailable/in Sin Bin"); return; }
+    const band = st[outgoing].onBand;
+    push([{type:"OFF", playerId:outgoing},{type:"ON", playerId:incoming, band}]);
+    toast(eligible(byId(incoming), band) ? first(incoming)+" on for "+first(outgoing) : first(incoming)+" on for "+first(outgoing)+" — not their usual spot");
+  }
+}
+function tapChip(id, kind){
+  if(!selected){ selected = {t:"p", id, kind}; render(); return; }
+  if(selected.t === "s"){ doPlace(id, selected.band); selected = null; render(); return; }
+  if(selected.id === id){ selected = null; render(); return; }
+  
+  const aId = selected.id;
+  confirmChange(describePair(aId, id), ()=>{ doPair(aId, id); render(); });
+  selected = null; render();
+}
+function tapSlot(band){
+  if(selected && selected.t === "p"){
+    const pid = selected.id;
+    confirmChange(describePlace(pid, band), ()=>{ doPlace(pid, band); render(); });
+    selected = null; render(); return;
+  }
+  selected = (selected && selected.t === "s" && selected.band === band) ? null : {t:"s", band};
+  render();
+}
+
+/* ---------- press and hold to drag ---------- */
+let drag = null, suppressClick = false;
+function armDrag(el){
+  el.addEventListener("pointerdown", e => {
+    if(drag || (e.button && e.button !== 0)) return;
+    const sx = e.clientX, sy = e.clientY;
+    let timer = setTimeout(()=>{ timer = null; off(); beginDrag(el, sx, sy); }, 180);
+    const move = ev => { if(Math.abs(ev.clientX-sx) > 8 || Math.abs(ev.clientY-sy) > 8){ clearTimeout(timer); off(); } };
+    const end = () => { clearTimeout(timer); off(); };
+    const off = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", end); document.removeEventListener("pointercancel", end); };
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", end); document.addEventListener("pointercancel", end);
+  });
+}
+function beginDrag(el, x, y){
+  const id = el.dataset.chip; if(!id) return;
+  if(S.settings.vibrate && navigator.vibrate) navigator.vibrate(14);
+  const r = el.getBoundingClientRect(), ghost = el.cloneNode(true);
+  ghost.id = "ghost"; ghost.classList.remove("sel");
+  ghost.style.width = r.width+"px"; ghost.style.minHeight = r.height+"px";
+  ghost.style.left = x+"px"; ghost.style.top = y+"px";
+  const srcAv = el.querySelector(".av,.avn"), gAv = ghost.querySelector(".av,.avn");
+  if(srcAv && gAv){ const cs = getComputedStyle(srcAv); gAv.style.width = cs.width; gAv.style.height = cs.height; gAv.style.fontSize = cs.fontSize; }
+  document.body.appendChild(ghost);
+  el.classList.add("dragging"); document.body.classList.add("nodrag");
+  drag = {id, el, ghost, target:null};
+  document.addEventListener("pointermove", dragMove, {passive:false});
+  document.addEventListener("pointerup", dragEnd); document.addEventListener("pointercancel", dragEnd); document.addEventListener("touchmove", blockScroll, {passive:false});
+}
+function blockScroll(e){ if(drag) e.preventDefault(); }
+function dragMove(e){
+  if(!drag) return; e.preventDefault();
+  drag.ghost.style.left = e.clientX+"px"; drag.ghost.style.top = e.clientY+"px"; drag.ghost.style.visibility = "hidden";
+  const under = document.elementFromPoint(e.clientX, e.clientY); drag.ghost.style.visibility = "";
+  let t = under && under.closest ? under.closest("[data-chip],[data-slot],[data-nslot],#benchzone,#poolzone") : null;
+  if(t === drag.el) t = null;
+  if(t !== drag.target){ if(drag.target) drag.target.classList.remove("droptarget"); drag.target = t; if(t) t.classList.add("droptarget"); }
+}
+function dragEnd(){
+  if(!drag) return;
+  const id = drag.id, t = drag.target;
+  if(drag.target) drag.target.classList.remove("droptarget");
+  drag.el.classList.remove("dragging"); drag.ghost.remove();
+  document.body.classList.remove("nodrag");
+  document.removeEventListener("pointermove", dragMove); document.removeEventListener("pointerup", dragEnd); document.removeEventListener("pointercancel", dragEnd); document.removeEventListener("touchmove", blockScroll);
+  drag = null;
+  /* A drag fires a synthetic click on release. Swallow exactly that one rather than
+     blanking every tap for a fixed window — a real tap right after a drag must land. */
+  suppressClick = true;
+  const eat = ev => { ev.stopPropagation(); ev.preventDefault(); done(); };
+  const done = () => { suppressClick = false; document.removeEventListener("click", eat, true); clearTimeout(tmr); };
+  const tmr = setTimeout(done, 250);
+  document.addEventListener("click", eat, true);
+  if(t){
+    if(activeTab === "next"){
+      if(t.id === "poolzone") planClear(id);
+      else if(t.dataset.nslot){
+        const [band, i] = t.dataset.nslot.split("|");
+        if(!eligible(byId(id), band)) toast(first(id)+" isn't listed for "+BANDNAME[band]+" — planned anyway");
+        planInto(id, band, parseInt(i));
+      }
+      nextSel = null;
+    } else {
+      /* dragging is deliberate — it commits straight away. Tapping is easy to do by
+         accident, so that path asks first. */
+      if(t.id === "benchzone"){ if(compute()[id].onBand){ push([{type:"OFF", playerId:id}]); toast(first(id)+" off"); } }
+      else if(t.dataset.slot) doPlace(id, t.dataset.slot);
+      else if(t.dataset.chip) doPair(id, t.dataset.chip);
+      selected = null;
+    }
+  }
+  render();
+}
+
+/* ============================================================
+   NEXT SHIFT
+   ============================================================ */
+let nextSel = null;
+function renderNext(){
+  const st = compute(), n = ensureNext(), res = resolvePlan();
+  const placed = nextCount(), ev = planDiff();
+  const comingOn = ev.filter(e => e.type === "ON").length, comingOff = ev.filter(e => e.type === "OFF").length, moving = ev.filter(e => e.type === "MOVE").length;
+
+  const order = ["FWD","MID","DEF","GK"];
+  let widest = 1; order.forEach(b => widest = Math.max(widest, slotsFor(b)));
+  const inner = Math.max(240, (window.innerWidth || 390) - 44);
+  const cw = Math.max(62, Math.min(108, Math.floor((inner - 6*(widest-1)) / widest)));
+  const avs = Math.max(28, Math.min(56, Math.round(cw * 0.54)));
+
+  let pitch = '<div id="pitch" style="--cw:'+cw+'px;--avs:'+avs+'px">';
+  order.forEach(b => {
+    if(!slotsFor(b)) return;
+    pitch += '<div class="band">';
+    n[b].forEach((pid, i) => {
+      if(pid) pitch += planChip(byId(pid), st, b, i, false);
+      else if(res[b][i]) pitch += planChip(byId(res[b][i]), st, b, i, true);
+      else {
+        const on = nextSel && nextSel.t==="s" && nextSel.band===b && nextSel.i===i;
+        pitch += '<button class="chip empty'+(b==="GK"?" gkslot":"")+(on?" sel":"")+'" data-nslot="'+b+'|'+i+'">+ '+BANDNAME[b]+'</button>';
+      }
+    });
+    pitch += '</div><div class="bandlab">'+BANDNAME[b]+' · '+slotsFor(b)+'</div>';
+  });
+  pitch += '</div>';
+
+  const inPlan = {}; BANDS.forEach(b => n[b].forEach(id => { if(id) inPlan[id] = 1; }));
+  const pool = S.roster.filter(p => !inPlan[p.id] && available(p)).sort((a,b) => st[a.id].total - st[b.id].total);
+  const poolHTML = '<div id="poolzone"><div id="bench">' + (pool.length ? pool.map(p => {
+    const stale = isStale(p.id);
+    return '<button class="chip'+((nextSel&&nextSel.t==="p"&&nextSel.id===p.id)?" sel":"")+(st[p.id].onBand?" onnow":"")+(stale?" stale":"")+'" data-chip="'+p.id+'" data-kind="pool">'+
+      (st[p.id].onBand ? '<span class="flag" style="color:var(--on)">ON</span>' : (stale?'<span class="flag" style="color:var(--warn)">STALE</span>':''))+
+      avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="tm mono">'+fmt(st[p.id].total)+'</span></button>';
+  }).join("") : '<div class="muted">Everyone available is in the plan.</div>') + '</div></div>';
+
+  const summary = placed ? comingOn+" on · "+comingOff+" off"+(moving?" · "+moving+" switching spots":"") : "Nothing planned yet. Auto-fill it, or drag players into the spots you want to change.";
+  document.getElementById("v-next").innerHTML =
+    '<div class="card" style="margin-bottom:10px"><b>Shift '+(S.game.shift+1)+'</b> <span class="muted">· '+summary+'</span><div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn ghost" id="n-load">Load lineup</button><button class="btn ghost" id="n-save"'+(placed?"":" disabled")+'>Save</button></div><div class="row" style="margin-top:8px"><button class="btn ghost wide" id="n-clear"'+(placed?"":" disabled")+'>Clear plan</button></div><button class="btn primary wide" id="n-send" style="margin-top:8px"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes to send")+'</button></div>'+
+    pitch + '<div class="hint">Faded players are holding their spot — leave a slot alone and nobody there changes. Tap a spot then a player, tap a player then a spot, or press and hold to drag.</div><h3>Available — lowest minutes first</h3>'+poolHTML;
+
+  document.querySelectorAll("#v-next [data-chip],#v-next [data-nslot]").forEach(el => {
+    el.addEventListener("click", ()=>{
+      if(suppressClick) return;
+      const hasPlayer = !!el.dataset.chip;
+      /* with somebody already picked, any occupied spot is a target;
+         with nothing picked, tapping a player picks them up */
+      if(el.dataset.nslot && (!hasPlayer || nextSel)) tapNextSlot(el.dataset.nslot);
+      else if(hasPlayer) tapNextChip(el.dataset.chip);
+    });
+    if(el.dataset.chip) armDrag(el);
+  });
+  document.getElementById("n-auto").addEventListener("click", ()=>{ S.game.planCleared = false; autoFillNext(); render(); toast("Filled by fewest minutes played"); });
+  document.getElementById("n-clear").addEventListener("click", ()=>{ S.game.next = null; S.game.planCleared = true; ensureNext(); nextSel = null; save(); render(); });
+  document.getElementById("n-send").addEventListener("click", sendNextShift);
+  document.getElementById("n-save").addEventListener("click", ()=>{
+    modal("Save this lineup", '<div class="muted" style="margin-bottom:6px">Reuse it next Saturday instead of building it again.</div>'+
+      '<input type="text" id="lu-name" placeholder="Starting XI, second half, tournament…">', "Save", ()=>{
+      const v = (document.getElementById("lu-name").value || "").trim() || "Lineup "+(S.lineups.length+1);
+      if(saveLineup(v) === false) return false;
+      render(); toast("Saved “"+v+"”");
+    });
+    setTimeout(()=>{ const el=document.getElementById("lu-name"); if(el) el.focus(); }, 60);
+  });
+  document.getElementById("n-load").addEventListener("click", openLineups);
+}
+function openLineups(){
+  if(!S.lineups.length){
+    modal("No saved lineups yet", '<div style="font-size:15px">Build a lineup on the <b>Next</b> tab or put one on the field, then tap <b>Save</b>. It will be waiting here next week.</div>', null, null, "Close");
+    return;
+  }
+  const body = '<div class="lulist">'+ S.lineups.map(L => {
+    const n = BANDS.map(b => (L.slots[b]||[]).length).reduce((a,c)=>a+c,0);
+    return '<button data-lu="'+L.id+'"><b>'+esc(L.name)+'</b>'+
+      '<span class="muted">'+n+' players · '+L.size+'v'+L.size+'</span>'+
+      '<span class="muted" style="flex:none">Load</span></button>'+
+      '<button data-ludel="'+L.id+'" style="min-height:28px;height:28px;font-size:11px;color:var(--alert);margin:-4px 0 10px 4px">Delete</button>';
+  }).join("") +'</div>';
+  modal("Saved lineups", body, null, null, "Close");
+  document.querySelectorAll("#modalbody [data-lu]").forEach(el => el.addEventListener("click", ()=>{
+    loadLineup(el.dataset.lu); closeModal(); activeTab = "next"; render();
+  }));
+  document.querySelectorAll("#modalbody [data-ludel]").forEach(el => el.addEventListener("click", ()=>{
+    S.lineups = S.lineups.filter(x => x.id !== el.dataset.ludel); save(); closeModal(); render(); toast("Deleted");
+  }));
+}
+function planChip(p, st, band, i, holding){
+  if(!p) return '<button class="chip empty" data-nslot="'+band+'|'+i+'">+ '+BANDNAME[band]+'</button>';
+  const r = st[p.id];
+  return '<button class="chip'+((nextSel&&nextSel.t==="p"&&nextSel.id===p.id)?" sel":"")+(band==="GK"?" gkslot":"")+(holding?" holding":"")+'" data-chip="'+p.id+'" data-kind="plan" data-nslot="'+band+'|'+i+'">'+
+    (holding ? '<span class="flag" style="color:var(--ink-dim)">STAYS</span>' : (r.onBand ? '' : '<span class="flag" style="color:var(--next)">IN</span>'))+
+    avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="tm mono">'+fmt(r.total)+'</span></button>';
+}
+function tapNextChip(pid){
+  if(!nextSel){ nextSel = {t:"p", id:pid}; render(); return; }
+  if(nextSel.t === "s"){
+    if(!eligible(byId(pid), nextSel.band)) toast(first(pid)+" isn't listed for "+BANDNAME[nextSel.band]+" — planned anyway");
+    planInto(pid, nextSel.band, nextSel.i); nextSel = null; render(); return;
+  }
+  if(nextSel.id === pid){ nextSel = null; render(); return; }
+  const target = nextSlotOf(pid), mine = nextSlotOf(nextSel.id);
+  if(target) planInto(nextSel.id, target.band, target.i);
+  else if(mine) planClear(nextSel.id);
+  nextSel = null; render();
+}
+function tapNextSlot(key){
+  const [band, iStr] = key.split("|"), i = parseInt(iStr);
+  if(nextSel && nextSel.t === "p" && nextSel.id === (ensureNext()[band][i])){ nextSel = null; render(); return; }
+  if(nextSel && nextSel.t === "p"){
+    const p = byId(nextSel.id);
+    if(!eligible(p, band)) toast(first(nextSel.id)+" isn't listed for "+BANDNAME[band]+" — planned anyway");
+    planInto(nextSel.id, band, i); nextSel = null; render(); return;
+  }
+  nextSel = (nextSel && nextSel.t === "s" && nextSel.band === band && nextSel.i === i) ? null : {t:"s", band, i}; render();
+}
+function sendNextShift(){
+  const ev = planDiff();
+  if(!ev.length){ toast("That plan matches who is already on"); return; }
+  const st = compute(), lines = ev.map(e => {
+    const nm = esc(byId(e.playerId).name);
+    if(e.type === "ON") return '<div class="stage"><b class="in">ON</b> &nbsp;'+nm+' at '+BANDNAME[e.band]+'</div>';
+    if(e.type === "OFF") return '<div class="stage"><b class="out2">OFF</b> &nbsp;'+nm+' <span class="muted">('+fmt(st[e.playerId].total)+' played)</span></div>';
+    return '<div class="stage">'+nm+' switches to '+BANDNAME[e.band]+'</div>';
+  }).join("");
+  modal("Send on shift "+(S.game.shift+1), lines, "Make these changes", ()=>{ beginNewShift(); push(ev); nextSel = null; activeTab = "field"; render(); toast("Shift "+S.game.shift+" is on"); });
+}
+
+/* ============================================================
+   CLOCK & MINS
+   ============================================================ */
+function renderClock(){
+  const g = S.game, s = S.settings, done = g.period >= s.periods && g.periodOver;
+  document.getElementById("v-clock").innerHTML =
+    '<div class="card" style="text-align:center"><div class="muted">Period '+g.period+' of '+s.periods+'</div><div class="mono" id="big-clock" style="font-size:var(--fs-clock);font-weight:700;letter-spacing:-2px">00:00</div><div class="muted" id="big-left"></div><div style="margin-top:14px" class="muted">Shift clock</div><div class="mono" id="big-shift" style="font-size:34px;font-weight:700">0:00</div><div class="row" style="margin-top:14px"><button class="btn primary" id="c-toggle">'+(g.running?"Pause":"Start")+'</button><button class="btn" id="c-shift">Restart shift</button></div></div>'+
+    (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? "" : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End period '+g.period+' now</button><div class="muted" style="margin-top:8px">The clock stops on its own at '+s.periodLen+' minutes. Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
+    '<div class="card"><h2>Game controls</h2><div class="row" style="margin-bottom:8px"><button class="btn" id="c-note">Add a note</button><button class="btn ghost" id="c-undo">Undo last</button></div><button class="btn warn wide" id="c-new">New game</button><div class="muted" style="margin-top:8px">New game clears the clock and all minutes, files this game in History, and keeps your roster and settings.</div></div>';
+
+  document.getElementById("c-toggle").addEventListener("click", toggleClock);
+  document.getElementById("c-shift").addEventListener("click", ()=>{ resetShiftClock(); save(); render(); });
+  const ce = document.getElementById("c-end"); if(ce) ce.addEventListener("click", ()=>modal("End period "+g.period+"?", "The clock stops and minutes stop accruing.", "End period", endPeriodNow));
+  const cn = document.getElementById("c-next"); if(cn) cn.addEventListener("click", nextPeriod);
+  document.getElementById("c-undo").addEventListener("click", undoLast);
+  document.getElementById("c-note").addEventListener("click", ()=>{
+    modal("Add a note", '<input type="text" id="notetext" placeholder="Goal, injury, ref call…">', "Save note", ()=>{ const v = document.getElementById("notetext").value.trim(); if(v) { push([], v); toast("Note added"); render(); } });
+    setTimeout(()=>{ const n=document.getElementById("notetext"); if(n) n.focus(); }, 60);
+  });
+  document.getElementById("c-new").addEventListener("click", ()=>{
+    modal("Start a new game?", "This game's minutes go to History. The roster, photos and settings stay put.", "Start new game", ()=>{ archiveGame(); S.game = newGame(); save(); render(); toast("New game ready"); });
+  });
+}
+function archiveGame(){
+  if(!S.game.log.length) return;
+  const st = compute(), sc = computeMatchScore();
+  S.archive.unshift({
+    at: Date.now(), periods: S.game.period, score: sc,
+    totals: S.roster.map(p => ({name:p.name, number:p.number, GK:Math.round(st[p.id].GK), DEF:Math.round(st[p.id].DEF), MID:Math.round(st[p.id].MID), FWD:Math.round(st[p.id].FWD), total:Math.round(st[p.id].total)})),
+    log: S.game.log.slice()
+  });
+  S.archive = S.archive.slice(0,12);
+  /* keep full event logs for the last few games only — totals are what matter later,
+     and logs plus base64 photos will blow the storage quota */
+  S.archive.forEach((a,i) => { if(i >= 3) delete a.log; });
+}
+
+let sortKey = "total", sortDir = 1;
+function renderTimes(){
+  const st = compute(), rows = S.roster.slice().sort((a,b)=>{
+    if(sortKey === "name") return sortDir * a.name.localeCompare(b.name);
+    if(sortKey === "number") return sortDir * ((parseInt(a.number)||99)-(parseInt(b.number)||99));
+    return sortDir * (st[a.id][sortKey] - st[b.id][sortKey]);
+  });
+  const th = (k,l) => '<th class="sortable'+(sortKey===k?" sorted":"")+'" data-sort="'+k+'">'+l+'</th>';
+  const body = rows.map(p => {
+    const r = st[p.id];
+    return '<tr class="'+(r.onBand?"onfield":"")+(available(p)?"":" off")+'"><td><div class="pname"><div class="pnum" style="background:'+colorOf(p.number)+'">'+esc(p.number||"–")+'</div><b>'+esc(p.name)+'</b></div></td>'+
+      BANDS.map(b => '<td class="t"><button data-edit="'+p.id+'|'+b+'"><span class="mono" data-live="'+p.id+'|'+b+'">0:00</span><span class="cnt" data-livec="'+p.id+'|'+b+'"></span></button></td>').join("")+
+      '<td class="t"><div class="tot"><span class="mono" data-live="'+p.id+'|total">0:00</span><span class="cnt" data-livec="'+p.id+'|total"></span></div></td></tr>';
+  }).join("");
+
+  document.getElementById("v-times").innerHTML =
+    (S.roster.length ? '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1"><col class="ct"><col class="ct"><col class="ct"><col class="ct"><col class="ctot"></colgroup><thead><tr>'+th("name","Player")+th("GK","GK")+th("DEF","DEF")+th("MID","MID")+th("FWD","FWD")+th("total","Total")+'</tr></thead><tbody>'+body+'</tbody></table><div class="muted" style="padding:8px 2px">Each cell shows time played and, below it, how many times they went into that spot. Tap a time to correct it. Green names are on the field.</div></div><div class="row"><button class="btn" id="x-csv">Save CSV</button>'+(navigator.share ? '<button class="btn" id="x-share">Share summary</button>' : '')+'<button class="btn ghost" id="x-text">Copy</button></div>' : '<div class="card">No players yet. Add your team on the Roster tab.</div>');
+
+  document.querySelectorAll("#v-times th.sortable").forEach(el => el.addEventListener("click", ()=>{
+    const k = el.dataset.sort; if(k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = (k==="name"||k==="number") ? 1 : -1; } render();
+  }));
+  document.querySelectorAll("#v-times [data-edit]").forEach(el => el.addEventListener("click", ()=>{
+    const [pid, band] = el.dataset.edit.split("|"), cur = compute()[pid][band];
+    modal("Correct "+BANDNAME[band]+" minutes", '<div class="muted" style="margin-bottom:6px">'+esc(byId(pid).name)+' — currently '+mins(cur)+' min</div><input type="number" step="0.5" id="mval" value="'+mins(cur)+'">', "Save", ()=>{
+        const v = parseFloat(document.getElementById("mval").value); if(isNaN(v) || v < 0){ toast("Enter a number of minutes"); return false; }
+        S.game.adj[pid] = S.game.adj[pid] || {}; S.game.adj[pid][band] = (S.game.adj[pid][band]||0) + (v*60 - cur); save(); render();
+      });
+  }));
+  const xt = document.getElementById("x-text"); if(xt) xt.addEventListener("click", ()=>copyOut(summaryText()));
+  const xc = document.getElementById("x-csv"); if(xc) xc.addEventListener("click", ()=>saveFile("playing-time-"+stamp()+".csv", summaryCSV(), "text/csv"));
+  const xs = document.getElementById("x-share"); if(xs) xs.addEventListener("click", ()=>shareFile("playing-time-"+stamp()+".txt", summaryText(), "text/plain", "Playing time"));
+}
+function summaryText(){
+  const st = compute(), rows = S.roster.slice().sort((a,b)=>st[b.id].total-st[a.id].total);
+  return "Playing time — " + new Date().toLocaleDateString() + "\n" + rows.map(p => { const r = st[p.id]; return "#"+(p.number||"–")+" "+p.name+" — "+mins(r.total)+" min  (GK "+mins(r.GK)+", D "+mins(r.DEF)+", M "+mins(r.MID)+", F "+mins(r.FWD)+")"; }).join("\n");
+}
+function summaryCSV(){
+  const st = compute();
+  return "Name,Number,GK,Defense,Midfield,Forward,Total\n" + S.roster.map(p => { const r = st[p.id]; return '"'+p.name.replace(/"/g,'""')+'",'+(p.number||"")+","+mins(r.GK)+","+mins(r.DEF)+","+mins(r.MID)+","+mins(r.FWD)+","+mins(r.total); }).join("\n");
+}
+function stamp(){ const d = new Date(), pad = n => String(n).padStart(2,"0"); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes()); }
+function backupName(){ return "sideline-backup-"+stamp()+".json"; }
+function saveFile(name, text, mime){
+  try{ const blob = new Blob([text], {type:mime}), url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = name; a.style.display = "none"; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 4000); toast("Saved "+name); }
+  catch(e){ toast("Browser blocked download — use Copy as text instead"); }
+}
+async function shareFile(name, text, mime, title){
+  try{ const file = new File([text], name, {type:mime}); if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title}); return; } await navigator.share({title, text}); }
+  catch(e){ if(e && e.name === "AbortError") return; toast("Sharing isn't available here"); }
+}
+function loadBackup(text){
+  let o; try{ o = JSON.parse(text); }catch(e){ toast("That file isn't a backup"); return false; }
+  if(!o || !o.roster || !o.settings){ toast("That file isn't a backup"); return false; }
+  S = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), o);
+  if(!S.game) S.game = newGame(); S.game.adj = S.game.adj || {};
+  if(!S.game.shift) S.game.shift = 1; S.game.log.forEach(e => { if(!e.sh) e.sh = 1; if(!e.eid) e.eid=uid(); });
+  S.roster.forEach(p => { if(!p.elig) p.elig = newElig(); });
+  S.game.running = false; S.game.startedAt = null;
+  document.body.classList.toggle("sun", !!S.settings.sun); document.body.classList.toggle("adv", !!S.settings.advanced);
+  closeModal(); save(); render(); toast("Loaded "+S.roster.length+" players"); return true;
+}
+function copyOut(text){
+  modal("Copy and paste", '<textarea id="outbox" readonly>'+esc(text)+'</textarea>', "Copy", ()=>{
+    const t = document.getElementById("outbox"); t.select(); t.setSelectionRange(0, 999999);
+    try{ document.execCommand("copy"); toast("Copied"); } catch(e){ if(navigator.clipboard) navigator.clipboard.writeText(text).then(()=>toast("Copied")); }
+  }, "Close");
+}
+
+/* ============================================================
+   HISTORY
+   ============================================================ */
+let openShifts = {};
+/* Wrong name on a goal is the mistake coaches actually make, and deleting and
+   re-adding loses the clock time. Let them just point at the right player. */
+function fixEvent(eid){
+  const e = S.game.log.find(x => x.eid === eid); if(!e) return;
+  if(e.type === "NOTE"){
+    modal("Edit note", '<input type="text" id="fix-note" value="'+esc(e.note)+'">', "Save", ()=>{
+      const v = document.getElementById("fix-note").value.trim();
+      if(!v){ toast("Type something or delete the note"); return false; }
+      e.note = v; save(); render(); toast("Note updated");
+    });
+    setTimeout(()=>{ const el=document.getElementById("fix-note"); if(el){ el.focus(); el.select(); } }, 60);
+    return;
+  }
+  const LABEL = {GOAL:"Goal", SOG:"Shot on goal", SHOT:"Shot", ASSIST:"Assist",
+                 SAVE:"Save", YELLOW:"Yellow card", RED:"Red card", GA:"Goal against"};
+  const st = compute();
+  /* whoever was on the field when it happened comes first — that is nearly always who you meant */
+  const onThen = {};
+  for(const x of S.game.log){
+    if(x.gt > e.gt) break;
+    if(x.type === "ON" || x.type === "MOVE") onThen[x.playerId] = 1;
+    else if(x.type === "OFF") delete onThen[x.playerId];
+  }
+  const rank = p => (onThen[p.id] ? 0 : 1);
+  const list = S.roster.slice().sort((a,b) => rank(a) - rank(b) || (parseInt(a.number)||99)-(parseInt(b.number)||99));
+  const body = '<div class="muted" style="margin-bottom:8px">'+esc(LABEL[e.type]||e.type)+
+    ' at '+fmt2(e.gt)+' — currently '+esc(byId(e.playerId) ? byId(e.playerId).name : "unknown")+'. Tap who it should be.</div>'+
+    '<div class="lulist">'+ list.map(p =>
+      '<button data-fixto="'+p.id+'"'+(p.id===e.playerId?' style="border-color:var(--on)"':'')+'>'+
+        avatar(p)+'<b>'+esc(p.name)+'</b>'+
+        '<span class="muted" style="flex:none">'+(onThen[p.id] ? "on then" : "bench")+'</span></button>').join("") +'</div>';
+  modal("Who was it?", body, null, null, "Close");
+  document.querySelectorAll("#modalbody [data-fixto]").forEach(el => el.addEventListener("click", ()=>{
+    e.playerId = el.dataset.fixto;
+    invalidate(); save(); closeModal(); render();
+    toast((LABEL[e.type]||"Event")+" — "+first(e.playerId));
+  }));
+}
+function renderLog(){
+  const log = S.game.log, byShift = {};
+  log.forEach((e,i) => { const k = e.sh || 1; (byShift[k] = byShift[k] || []).push(i); });
+  const nums = Object.keys(byShift).map(Number).sort((a,b)=>b-a);
+  const nameOf = id => { const p = byId(id); return p ? esc(p.name.split(" ")[0]) : "?"; };
+
+  /* who was standing where at a given point in the log */
+  const lineAt = idx => {
+    const open = {};
+    for(let i=0;i<idx;i++){
+      const e = log[i];
+      if(e.type==="ON"||e.type==="MOVE") open[e.playerId] = e.band;
+      else if(e.type==="OFF") delete open[e.playerId];
+    }
+    return open;
+  };
+
+  /* full words in the detail, standard box-score letters in the collapsed header */
+  const MARK  = {GOAL:"Goal", SOG:"SOG", SHOT:"Shot", ASSIST:"Assist", SAVE:"Save",
+                 YELLOW:"Yellow card", RED:"Red card", GA:"Goal against",
+                 OPP_GOAL:"goal", OPP_SOG:"shot on goal", OPP_SHOT:"shot"};
+  const SHORT = {GOAL:"G", SOG:"SOG", SHOT:"Sh", ASSIST:"A", SAVE:"Sv",
+                 YELLOW:"YC", RED:"RC", GA:"GA"};
+  const TONE  = {YELLOW:"var(--warn)", RED:"var(--alert)", GOAL:"var(--on)"};
+  const MATCH = e => MARK[e.type] || e.type==="NOTE" || e.type==="PERIOD_END";
+
+  const html = nums.map(sh => {
+    const idxs = byShift[sh], first = log[idxs[0]];
+    /* A shift normally opens with a group of substitutions. If it doesn't — the first
+       thing logged was a goal, say — there is no opening group and everything counts
+       as an event, otherwise that goal would silently vanish from the card. */
+    const firstGroup = idxs.filter(i => log[i].g === first.g).map(i => log[i]);
+    const opensWithSubs = firstGroup.some(e => e.type==="ON" || e.type==="OFF" || e.type==="MOVE");
+    const openG = opensWithSubs ? first.g : null;
+    const lastOpening = opensWithSubs ? idxs.filter(i => log[i].g === first.g).pop() + 1 : idxs[0];
+    const line = lineAt(lastOpening);
+    const later = idxs.map(i=>log[i]).filter(e => e.g !== openG);
+    const subs = later.filter(e => e.type==="ON"||e.type==="OFF"||e.type==="MOVE").length;
+    const events = later.filter(MATCH);
+
+    const pos = nums.indexOf(sh);
+    const endGt = pos > 0 ? log[byShift[nums[pos-1]][0]].gt : gameElapsed();
+    const dur = Math.max(0, endGt - first.gt);
+
+    const rows = BANDS.map(b => {
+      const who = Object.keys(line).filter(id => line[id] === b);
+      if(!who.length) return "";
+      return '<div class="lrow"><span class="lpos">'+BANDNAME[b]+'</span><span class="lwho">'+who.map(nameOf).join(", ")+'</span></div>';
+    }).join("");
+
+    const evNodes = events.map(e => {
+      let desc;
+      if(e.type==="NOTE") desc = "“"+esc(e.note)+"”";
+      else if(e.type==="PERIOD_END") desc = '<span class="muted">End of period '+e.period+'</span>';
+      else if(e.type.indexOf("OPP_")===0) desc = 'Opponent '+MARK[e.type];
+      else desc = '<b'+(TONE[e.type]?' style="color:'+TONE[e.type]+'"':'')+'>'+MARK[e.type]+'</b> — '+nameOf(e.playerId);
+      const del = e.type==="PERIOD_END" ? "" :
+        '<button class="btn ghost" style="min-height:26px;height:26px;width:26px;padding:0;flex:none" data-del-ev="'+e.eid+'">×</button>';
+      const fixable = e.type === "NOTE" || (e.playerId && e.type.indexOf("OPP_") !== 0);
+      const label = fixable
+        ? '<button data-fix="'+e.eid+'" style="flex:1;text-align:left;font:inherit;color:inherit">'+desc+'</button>'
+        : '<span style="flex:1">'+desc+'</span>';
+      return '<div class="lmid" style="display:flex;align-items:center;gap:8px">'+
+        '<span class="mono muted" style="flex:none">'+fmt2(e.gt)+'</span>'+
+        label+del+'</div>';
+    }).join("");
+
+    /* a compact badge line so a collapsed shift still says something */
+    const tally = {};
+    events.forEach(e => {
+      /* opponent events are already in the scoreline up top — don't double-count them here */
+      if(SHORT[e.type] && e.type.indexOf("OPP_") !== 0) tally[e.type] = (tally[e.type]||0)+1;
+    });
+    const badges = Object.keys(SHORT).filter(k => tally[k])
+      .map(k => '<span'+(TONE[k]?' style="color:'+TONE[k]+'"':'')+'>'+tally[k]+SHORT[k]+'</span>').join(" ");
+
+    const open = openShifts["s"+sh] === true || (openShifts["s"+sh] === undefined && pos === 0);
+    return '<div class="hgroup">'+
+      '<button class="hhead" data-sh="'+sh+'">'+
+        '<span class="t mono">'+fmt2(first.gt)+'</span>'+
+        '<span class="s"><b>Shift '+sh+'</b>'+(badges?' <span class="badges">'+badges+'</span>':'')+'</span>'+
+        '<span class="muted">'+fmt(dur)+' · P'+first.period+(open?" ▾":" ▸")+'</span>'+
+      '</button>'+
+      (open ? '<div class="hbody">'+
+        (rows || '<div class="muted">Nobody on the field</div>')+
+        (subs ? '<div class="lmid muted">'+subs+' mid-shift change'+(subs>1?"s":"")+'</div>' : '')+
+        evNodes+
+      '</div>' : '')+
+    '</div>';
+  }).join("");
+
+  const arch = S.archive.map((a,i) => '<div class="hgroup"><button class="hhead" data-arch="'+i+'"><span class="s">'+new Date(a.at).toLocaleDateString()+' · '+(a.score?`US ${a.score.us}-${a.score.them} THEM`:'')+'</span><span class="muted">view ▸</span></button></div>').join("");
+  document.getElementById("v-log").innerHTML = '<div class="row" style="margin-bottom:10px"><button class="btn ghost" id="l-undo">Undo last change</button></div>'+(nums.length ? html : '<div class="card">No shifts yet. Each rotation you send on becomes a card here, showing who lined up where.</div>')+(S.archive.length ? '<h3>Earlier games</h3>'+arch : "");
+
+  document.querySelectorAll("#v-log [data-sh]").forEach(el => el.addEventListener("click", ()=>{
+    const k = "s"+el.dataset.sh, first = el.closest("#v-log").querySelector(".hgroup") === el.parentElement;
+    const cur = openShifts[k] === true || (openShifts[k] === undefined && first);
+    openShifts[k] = !cur; render();
+  }));
+  document.querySelectorAll("#v-log [data-fix]").forEach(btn =>
+    btn.addEventListener("click", ()=>fixEvent(btn.dataset.fix)));
+  document.querySelectorAll("#v-log [data-del-ev]").forEach(btn => btn.addEventListener("click", ()=>{
+    const e = S.game.log.find(x => x.eid === btn.dataset.delEv); if(!e) return;
+    S.game.log = S.game.log.filter(x => x.eid !== btn.dataset.delEv);
+    invalidate(); save(); render(); toast("Deleted");
+  }));
+  document.querySelectorAll("#v-log [data-arch]").forEach(el => el.addEventListener("click", ()=>{
+    const a = S.archive[el.dataset.arch];
+    const body = a.totals.slice().sort((x,y)=>y.total-x.total).map(t => '<div class="stage">#'+esc(t.number||"–")+' '+esc(t.name)+' — <b>'+mins(t.total)+'</b> min <span class="muted">(GK '+mins(t.GK)+' · D '+mins(t.DEF)+' · M '+mins(t.MID)+' · F '+mins(t.FWD)+')</span></div>').join("");
+    modal(new Date(a.at).toLocaleDateString(), body, null, null, "Close");
+  }));
+  document.getElementById("l-undo").addEventListener("click", undoLast);
+}
+
+/* ============================================================
+   ROSTER
+   ============================================================ */
+const AVAIL = [["available","Available"],["late","Arriving late"],["early","Left early"],["out","Out"]];
+let openPlayer = null, addName = "", addNum = "";
+
+function renderRoster(){
+  const st = compute(), list = S.roster.length ? S.roster.map(p => {
+    const open = openPlayer === p.id, el = eligList(p), isAvail = available(p) || p.avail === "available";
+    const quickBtn = '<button class="btn '+(isAvail?'ghost':'warn')+'" style="padding:0 10px;min-height:32px;height:32px;font-size:11px;margin-right:4px;" data-quick-avail="'+p.id+'">'+(isAvail?'Here':'Out')+'</button>';
+    const head = '<div class="prow'+(open?" open":"")+'" data-open="'+p.id+'">'+ avatar(p) + '<div class="meta"><b>'+esc(p.name)+'</b><div class="status'+(isAvail?"":" out")+'">#'+esc(p.number||"–")+' · '+ el.map(b=>b==="GK"?"GK":b[0]).join("·")+(isAvail ? "" : " · "+(AVAIL.find(a=>a[0]===p.avail)||AVAIL[0])[1])+(st[p.id].onBand ? " · on at "+BANDNAME[st[p.id].onBand] : "")+'</div></div>'+quickBtn+'<span class="muted">'+(open?"▾":"▸")+'</span></div>';
+    if(!open) return head;
+    
+    let sznHtml = "";
+    if(S.settings.advanced){
+      const szn = computeSeasonStats(p.id);
+      sznHtml = `
+        <div class="muted" style="margin-bottom:4px">Season Event Totals</div>
+        <div class="row" style="margin-bottom:12px; font-size:11px; text-align:center; flex-wrap:wrap;">
+           <div class="card" style="margin-bottom:4px; padding:6px; flex:1 1 20%;"><b>${szn.goals}</b><br>G</div>
+           <div class="card" style="margin-bottom:4px; padding:6px; flex:1 1 20%;"><b>${szn.assists}</b><br>Ast</div>
+           <div class="card" style="margin-bottom:4px; padding:6px; flex:1 1 20%;"><b>${szn.sog}</b><br>SOG</div>
+           <div class="card" style="margin-bottom:4px; padding:6px; flex:1 1 20%;"><b>${szn.shots}</b><br>Sh</div>
+           <div class="card" style="margin-bottom:4px; padding:6px; flex:1 1 20%; border-color:var(--alert);"><b>${szn.yellows}</b><br>YC</div>
+        </div>`;
+    }
+
+    return head + '<div class="pedit">'+sznHtml+'<div class="row" style="margin-bottom:10px"><input type="text" data-f="name" data-p="'+p.id+'" value="'+esc(p.name)+'" style="flex:3"><input type="text" inputmode="numeric" data-f="number" data-p="'+p.id+'" value="'+esc(p.number)+'" style="flex:1"></div><div class="muted" style="margin-bottom:4px">Positions this player can take</div><div class="postog">'+ BANDS.map(b => '<button class="'+(eligible(p,b)?"on":"")+'" data-elig="'+p.id+'|'+b+'">'+(b==="GK"?"GK":BANDNAME[b])+'</button>').join("") +'</div><div class="muted" style="margin-bottom:4px">Availability</div><div class="seg" style="margin-bottom:12px">'+ AVAIL.map(a => '<button class="'+(p.avail===a[0]?"on":"")+'" data-avail="'+p.id+'|'+a[0]+'">'+({available:"Here",late:"Late",early:"Left",out:"Out"})[a[0]]+'</button>').join("") +'</div><div class="row" style="align-items:center;margin-bottom:12px"><button class="btn" data-cam="'+p.id+'">Take photo</button><button class="btn" data-lib="'+p.id+'">Choose file</button>'+(p.photo ? '<button class="btn ghost" data-nophoto="'+p.id+'">Clear photo</button>' : '')+'</div><button class="btn warn wide" data-del="'+p.id+'">Remove from roster</button></div>';
+  }).join("") : '<div class="card">No players yet. Type a name and number above to add your first one.</div>';
+
+  document.getElementById("v-roster").innerHTML =
+    (S.roster.length ? '<div class="row" style="margin-bottom:10px"><button class="btn" id="r-checkin">Who is here today?</button></div>' : '')+
+    '<div class="addrow"><input class="n" type="text" id="a-name" placeholder="Player name" value="'+esc(addName)+'"><input class="j" type="text" inputmode="numeric" id="a-num" placeholder="#" value="'+esc(addNum)+'"><button class="btn primary" id="a-go">Add</button></div><div class="plist">'+list+'</div>'+(S.roster.length ? '<div class="muted" style="margin-top:10px">'+S.roster.length+' players · '+S.roster.filter(available).length+' available · '+S.settings.teamSize+' on the field. Tap a player to set positions, availability and a photo.</div>' : "")+'<input type="file" accept="image/*" capture="user" id="file-cam" style="display:none"><input type="file" accept="image/*" id="file-lib" style="display:none">';
+
+  const rci = document.getElementById("r-checkin"); if(rci) rci.addEventListener("click", openCheckIn);
+  const nameEl = document.getElementById("a-name"), numEl = document.getElementById("a-num");
+  nameEl.addEventListener("input", ()=>{ addName = nameEl.value; }); numEl.addEventListener("input", ()=>{ addNum = numEl.value; });
+  const addNow = () => {
+    const n = nameEl.value.trim(); if(!n){ toast("Type a name first"); nameEl.focus(); return; }
+    S.roster.push({id:uid(), name:n, number:numEl.value.trim(), photo:null, avail:"available", elig:newElig()});
+    addName = ""; addNum = ""; save(); render(); const again = document.getElementById("a-name"); if(again) again.focus();
+  };
+  document.getElementById("a-go").addEventListener("click", addNow);
+  nameEl.addEventListener("keydown", e => { if(e.key === "Enter") numEl.focus(); }); numEl.addEventListener("keydown", e => { if(e.key === "Enter") addNow(); });
+
+  document.querySelectorAll("#v-roster [data-open]").forEach(el => el.addEventListener("click", ()=>{ openPlayer = openPlayer === el.dataset.open ? null : el.dataset.open; render(); }));
+  document.querySelectorAll("#v-roster [data-f]").forEach(el => {
+    el.addEventListener("click", e => e.stopPropagation());
+    el.addEventListener("change", ()=>{ const p = byId(el.dataset.p); if(!p) return; const v = el.value.trim(); if(el.dataset.f === "name" && !v){ el.value = p.name; return; } p[el.dataset.f] = v; save(); render(); });
+  });
+  document.querySelectorAll("#v-roster [data-elig]").forEach(el => el.addEventListener("click", ()=>{
+    const [pid, band] = el.dataset.elig.split("|"), p = byId(pid); p.elig = p.elig || newElig();
+    if(p.elig[band] !== false && eligList(p).length === 1){ toast("Leave at least one position ticked"); return; }
+    p.elig[band] = p.elig[band] === false; save(); render();
+  }));
+  document.querySelectorAll("#v-roster [data-avail]").forEach(el => el.addEventListener("click", ()=>{
+    const [pid, v] = el.dataset.avail.split("|"), p = byId(pid);
+    const wasOn = compute()[pid].onBand;
+    p.avail = v; invalidate(); save();
+    if(v !== "available" && wasOn){ p.avail = "available"; pullPlayer(pid, "Player unavailable"); p.avail = v; invalidate(); save(); render(); return; }
+    render();
+  }));
+  document.querySelectorAll("#v-roster [data-quick-avail]").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation(); const pid = el.dataset.quickAvail, p = byId(pid);
+    const wasOn = !!compute()[pid].onBand, goingOut = available(p);
+    p.avail = goingOut ? "out" : "available"; invalidate(); save();
+    if(goingOut && wasOn){ p.avail = "available"; pullPlayer(pid, "Player unavailable"); p.avail = "out"; invalidate(); save(); render(); return; }
+    render();
+  }));
+  
+  const cam = document.getElementById("file-cam"), lib = document.getElementById("file-lib"); let photoFor = null;
+  const pick = input => { const f = input.files && input.files[0]; input.value = ""; if(!f || !photoFor) return; shrink(f, data => { const p = byId(photoFor); if(p){ p.photo = data; save(); render(); } }); };
+  cam.addEventListener("change", ()=>pick(cam)); lib.addEventListener("change", ()=>pick(lib));
+  document.querySelectorAll("#v-roster [data-cam]").forEach(el => el.addEventListener("click", ()=>{ photoFor = el.dataset.cam; cam.click(); }));
+  document.querySelectorAll("#v-roster [data-lib]").forEach(el => el.addEventListener("click", ()=>{ photoFor = el.dataset.lib; lib.click(); }));
+  document.querySelectorAll("#v-roster [data-nophoto]").forEach(el => el.addEventListener("click", ()=>{ byId(el.dataset.nophoto).photo = null; save(); render(); }));
+  document.querySelectorAll("#v-roster [data-del]").forEach(el => el.addEventListener("click", ()=>{
+    const pid = el.dataset.del, p = byId(pid);
+    modal("Remove "+p.name+"?", "Their minutes come out of this game's totals too.", "Remove", ()=>{ S.roster = S.roster.filter(x => x.id !== pid); S.game.log = S.game.log.filter(e => e.playerId !== pid); delete S.game.adj[pid]; openPlayer = null; save(); render(); toast("Removed"); });
+  }));
+}
+function shrink(file, cb){
+  const fr = new FileReader();
+  fr.onload = () => { const img = new Image(); img.onload = () => { const side = Math.min(img.width, img.height), out = 128, c = document.createElement("canvas"); c.width = c.height = out; const ctx = c.getContext("2d"); ctx.drawImage(img, (img.width-side)/2, (img.height-side)/2, side, side, 0, 0, out, out); cb(c.toDataURL("image/jpeg", 0.72)); }; img.onerror = () => toast("Couldn't read that image"); img.src = fr.result; };
+  fr.onerror = () => toast("Couldn't read that file"); fr.readAsDataURL(file);
+}
+
+/* ============================================================
+   SETUP
+   ============================================================ */
+function renderHelp(){
+  const q = (t,a) => '<div class="helpq">'+t+'</div><div class="helpa">'+a+'</div>';
+  document.getElementById("v-help").innerHTML =
+    '<div class="card">'+
+      '<h2>The short version</h2>'+
+      '<div class="startrow"><b>1</b><div>Add players on <b>Roster</b>.</div></div>'+
+      '<div class="startrow"><b>2</b><div>On <b>Field</b>, tap an open spot then tap a player. Repeat until the field is full.</div></div>'+
+      '<div class="startrow"><b>3</b><div>Tap <b>START</b> at the top left to run the clock.</div></div>'+
+      '<div class="startrow"><b>4</b><div>When the buzzer goes, tap <b>Send them on</b>.</div></div>'+
+    '</div>'+
+    '<div class="card">'+
+      q("What is the difference between Field and Next?",
+        "<b>Field</b> is what is happening right now. Change something here and it takes effect immediately — that is your injury sub or a quick fix.<br><br><b>Next</b> is the shift you are getting ready. Nothing there is live until you tap Send them on.")+
+      q("How do I move players around?",
+        "Tap a player, then tap where they should go — another player, or an open spot. You will be asked to confirm.<br><br>Or press and hold a player and drag them. Dragging takes effect straight away, with no confirmation.")+
+      q("Who picks the next shift?",
+        "The app keeps one ready for you, built around who has played least. Everyone already on the field stays where they are standing unless there is a good reason to move them, so you are never reading out seven new positions at once.<br><br>Change anything you like on the Next tab before you send it.")+
+      q("What does a faded player mean?",
+        "On the <b>Next</b> tab, faded means they are holding that spot. Leave a spot alone and nobody there changes — so you can swap two players and leave the rest of the team alone.")+
+      q("Before the game starts",
+        "Tap <b>Who is here?</b> and knock out anyone who didn't show. They drop out of the rotation until you put them back.<br><br>Then <b>Load a lineup</b> if you saved one — you build your starting eleven once and reuse it every Saturday.")+
+      q("How do I save a lineup?",
+        "Get the team arranged the way you want, either on the field or on the <b>Next</b> tab, then tap <b>Save</b> there and give it a name. Loading one puts it into the plan, so you get to look it over before anyone runs on.")+
+      q("I credited the wrong player.",
+        "On <b>History</b>, tap the event itself — not the ×. You get a list of who was on the field at that moment, nearest the top. Tap the right name and the clock time stays as it was. Notes can be edited the same way.")+
+      q("Somebody got hurt.",
+        "Tap them on the Field tab, then <b>Hurt — sub out now</b>. They come straight off and the app offers the fairest replacement.")+
+      q("Is playing time really equal?",
+        "The <b>Minutes</b> tab is the record. Each cell shows time played, and underneath it how many times they went into that spot. Goalie minutes count toward a player's total.<br><br>Tap any time to correct it if something got logged wrong.")+
+      q("I made a mistake.",
+        "<b>Undo last</b> on the Field tab reverses the last change. On <b>History</b> you can delete a goal, card or note — substitutions cannot be deleted there, because the minute totals depend on them. Fix those by substituting again.")+
+      q("Will I lose everything if I close the tab?",
+        "Your roster, settings and the game in progress save automatically. Before a big day, use <b>Save backup file</b> on the Setup tab — that is your insurance against a cleared cache or a new phone.")+
+      q("Can I put this on my home screen?",
+        "Yes, and you should. In Safari tap Share then <b>Add to Home Screen</b>; in Chrome it's the menu then <b>Install app</b> or <b>Add to Home screen</b>. It then opens full screen with no address bar and runs with no signal at all.")+
+      q("Something looks wrong.",
+        "Setup has a <b>Run self-check</b> button. It confirms the minutes add up, nobody is on the field twice, and saving is working.")+
+    '</div>'+
+    '<div class="card"><h2>Not sure about a button?</h2><div class="muted">Nothing on the Field or Next tab is permanent. Undo is always one tap away, and the clock keeps running either way.</div></div>';
+}
+function renderSetup(){
+  const s = S.settings, list = FORMATIONS[s.teamSize] || FORMATIONS[7], sizes = [4,5,6,7,8,9,10,11];
+  document.getElementById("v-setup").innerHTML =
+    '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b><div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
+    '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
+    '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
+    '<div class="card"><h2>Alerts and display</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+toggleRow("s-vib","Vibrate",s.vibrate)+toggleRow("s-confirm","Confirm changes made by tapping",s.confirmChanges!==false)+toggleRow("s-auto","Keep the next shift ready automatically",s.autoPlan!==false)+toggleRow("s-rot","Rotate players between defense and attack",s.rotate)+numField("s-switch","Most players who change position in one shift",s.maxSwitch==null?2:s.maxSwitch,0,10,1)+'<div class="adv-only">'+toggleRow("s-yc","Yellow card sends the player to a sin bin",!!s.ycSinBin)+'</div>'+toggleRow("s-sun","Sun mode — maximum contrast",s.sun)+'<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
+    '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
+    '<div class="card"><h2>About this app</h2><div class="muted" style="line-height:1.5">'+
+      'Sideline tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
+      'Everything is worked out from a log of substitutions, so the minutes are always consistent with what actually happened. Nothing leaves your phone and nothing needs a signal — it works in airplane mode.<br><br>'+
+      'A few things worth knowing: goalie minutes count toward a player\'s total; an empty spot in a planned shift means whoever is there now stays; and the backup file on this page is the only copy that survives clearing your browser data.'+
+    '</div><div class="row" style="margin-top:10px"><button class="btn ghost" id="s-help">Open Help</button></div></div>';
+
+  document.getElementById("adv-on").addEventListener("click", ()=>{ S.settings.advanced = true; save(); render(); });
+  document.getElementById("adv-off").addEventListener("click", ()=>{ S.settings.advanced = false; save(); render(); });
+  document.getElementById("s-size").addEventListener("change", e => { S.settings.teamSize = parseInt(e.target.value); S.settings.formationIdx = 0; save(); render(); });
+  document.getElementById("s-form").addEventListener("change", e => { S.settings.formationIdx = parseInt(e.target.value); save(); render(); });
+  bindNum("s-periods", v => S.settings.periods = v); bindNum("s-plen", v => S.settings.periodLen = v); bindNum("s-slen", v => { S.settings.shiftLen = v; S.game.warned=false; S.game.alerted=false; }); bindNum("s-warn", v => S.settings.warnLead = v); bindNum("s-min", v => S.settings.minStint = v); bindNum("s-stale", v => S.settings.staleWarn = v); bindNum("s-sin", v => S.settings.sinBinMins = v); bindNum("s-switch", v => S.settings.maxSwitch = v);
+  bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
+  document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
+  document.getElementById("s-help").addEventListener("click", ()=>{ activeTab = "help"; render(); });
+  document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));
+  document.getElementById("s-dl").addEventListener("click", ()=>saveFile(backupName(), JSON.stringify(S), "application/json"));
+  const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>shareFile(backupName(), JSON.stringify(S), "application/json", "Sideline backup"));
+  const fi = document.getElementById("s-file"); document.getElementById("s-open").addEventListener("click", ()=>fi.click());
+  fi.addEventListener("change", ()=>{ const f = fi.files && fi.files[0]; fi.value = ""; if(!f) return; const fr = new FileReader(); fr.onload = () => loadBackup(fr.result); fr.onerror = () => toast("Couldn't read that file"); fr.readAsText(f); });
+  document.getElementById("s-exp").addEventListener("click", ()=>copyOut(JSON.stringify(S)));
+  document.getElementById("s-imp").addEventListener("click", ()=>{ modal("Paste a backup", '<div class="muted" style="margin-bottom:6px">This replaces the roster, settings and current game.</div><textarea id="impbox" placeholder="Paste the backup text here"></textarea>', "Replace everything", ()=>{ if(!loadBackup(document.getElementById("impbox").value)) return false; }); });
+  document.getElementById("s-wipe").addEventListener("click", ()=>{ modal("Erase everything?", "Roster, photos, minutes and history all go. There's no undo.", "Erase", ()=>{ S = JSON.parse(JSON.stringify(DEFAULTS)); S.game = newGame(); document.body.classList.remove("sun"); document.body.classList.remove("adv"); save(); render(); toast("Erased"); }); });
+}
+/* Everything on the Minutes tab is derived from the event log, so a bad edit shows up
+   as wrong numbers rather than a crash. These are the invariants that must hold. */
+function selfCheck(){
+  const st = compute(), out = [];
+  const ok = (name, pass, detail) => out.push('<div class="stage">'+(pass?'<span class="in">PASS</span>':'<span class="out2">FAIL</span>')+' '+name+(detail?' <span class="muted">'+esc(detail)+'</span>':'')+'</div>');
+
+  const onField = S.roster.filter(p => st[p.id].onBand);
+  ok("Field holds the right number", onField.length === 0 || onField.length <= S.settings.teamSize,
+     onField.length+" on, "+S.settings.teamSize+" allowed");
+
+  let over = [];
+  BANDS.forEach(b => { const c = onField.filter(p => st[p.id].onBand === b).length;
+    if(c > slotsFor(b)) over.push(BANDNAME[b]+" "+c+"/"+slotsFor(b)); });
+  ok("No position is overfilled", !over.length, over.join(", "));
+
+  /* time conservation: everyone's minutes should add up to slots x elapsed */
+  let adjTotal = 0; const adj = S.game.adj||{};
+  for(const k in adj) for(const b in adj[k]) adjTotal += adj[k][b];
+  const sum = S.roster.reduce((a,p) => a + st[p.id].total, 0) - adjTotal;
+  let expect = 0, cursor = 0, live = {};
+  S.game.log.forEach(e => {
+    const n = Object.keys(live).length;
+    expect += n * Math.max(0, e.gt - cursor); cursor = e.gt;
+    if(e.type==="ON"||e.type==="MOVE") live[e.playerId] = 1;
+    else if(e.type==="OFF") delete live[e.playerId];
+  });
+  expect += Object.keys(live).length * Math.max(0, gameElapsed() - cursor);
+  ok("Minutes add up", Math.abs(sum - expect) < 2, Math.round(sum)+"s counted vs "+Math.round(expect)+"s on the field");
+
+  const dupes = S.roster.filter(p => {
+    let n = 0; S.game.log.forEach(e => { if(e.playerId===p.id){ if(e.type==="ON") n++; else if(e.type==="OFF") n--; } });
+    return n > 1;
+  });
+  ok("Nobody is on twice", !dupes.length, dupes.map(p=>p.name).join(", "));
+
+  const badElig = S.roster.filter(p => st[p.id].onBand && !eligible(p, st[p.id].onBand));
+  ok("Everyone is in a position they play", !badElig.length, badElig.map(p=>p.name).join(", "));
+
+  const ghosts = S.game.log.filter(e => e.playerId && !byId(e.playerId)).length;
+  ok("No events point at deleted players", !ghosts, ghosts ? ghosts+" orphaned" : "");
+
+  const bytes = JSON.stringify(S).length;
+  ok("Storage has room", bytes < 3500000, Math.round(bytes/1024)+" KB used, roughly 5 MB available");
+  ok("Saving is working", storageMode !== "memory", storageMode+" storage");
+
+  return out.join("");
+}
+function describeFormation(){
+  const f = formation(), parts = [f.d+" at the back", f.m ? f.m+" in midfield" : "no midfield", f.f+" up top", f.gk ? "1 in goal" : "no keeper"];
+  return parts.join(" · ") + " = " + ((f.gk?1:0)+f.d+f.m+f.f) + " on the field.";
+}
+function numField(id,label,val,min,max,step){ return '<label class="field"><span>'+label+'</span><input type="number" id="'+id+'" value="'+val+'" min="'+min+'" max="'+max+'" step="'+step+'" inputmode="numeric"></label>'; }
+function bindNum(id, set){ const el = document.getElementById(id); if(!el) return; el.addEventListener("change", ()=>{ let v = parseFloat(el.value); const min = parseFloat(el.min), max = parseFloat(el.max); if(isNaN(v)) v = min; v = Math.max(min, Math.min(max, v)); el.value = v; set(v); save(); paintClocks(); }); }
+function toggleRow(id,label,on){ return '<div class="row" style="align-items:center;margin-bottom:8px"><div style="flex:2;font-size:14px">'+label+'</div><div class="seg" style="flex:1;max-width:150px"><button data-tog="'+id+'" data-v="1" class="'+(on?"on":"")+'">On</button><button data-tog="'+id+'" data-v="0" class="'+(on?"":"on")+'">Off</button></div></div>'; }
+function bindTog(id, set){ document.querySelectorAll('[data-tog="'+id+'"]').forEach(b => b.addEventListener("click", ()=>{ set(b.dataset.v === "1"); save(); render(); })); }
+
+/* ============================================================
+   render
+   ============================================================ */
+function render(){
+  invalidate();
+  maybeAutoPlan();
+  document.body.classList.toggle("adv", !!S.settings.advanced); paintTabs();
+  if(activeTab === "field") renderField(); else if(activeTab === "next") renderNext(); else if(activeTab === "clock") renderClock(); else if(activeTab === "times") renderTimes(); else if(activeTab === "log") renderLog(); else if(activeTab === "roster") renderRoster(); else if(activeTab === "help") renderHelp(); else if(activeTab === "setup") renderSetup();
+  paintClocks(); paintLive();
+}
+
+document.getElementById("tb-go").addEventListener("click", toggleClock);
+document.getElementById("tb-score").addEventListener("click", ()=>{
+   const sc = computeMatchScore();
+   const body = `
+     <div style="display:flex; justify-content:space-around; text-align:center; margin-bottom:16px;">
+        <div><b>Us</b><br>${sc.us} G<br>${sc.usSOG} SOG<br>${sc.usShots} Sh</div>
+        <div><b>Them</b><br>${sc.them} G<br>${sc.themSOG} SOG<br>${sc.themShots} Sh</div>
+     </div>
+     <div class="muted" style="margin-bottom:8px">Log opponent event:</div>
+     <div class="row">
+       <button class="btn primary" id="opp-goal" style="font-size:13px;padding:0;">Goal</button>
+       <button class="btn ghost" id="opp-sog" style="border:1px solid var(--line);font-size:13px;padding:0;">SOG</button>
+       <button class="btn ghost" id="opp-shot" style="border:1px solid var(--line);font-size:13px;padding:0;">Shot</button>
+     </div>
+   `;
+   modal("Match Stats & Opponent Events", body, null, null, "Close");
+   setTimeout(() => {
+     document.getElementById("opp-goal").addEventListener("click", ()=>{
+       const evs = [{type: 'OPP_GOAL'}], st = compute(), gk = S.roster.find(p => st[p.id] && st[p.id].onBand === 'GK');
+       if(gk) evs.push({type: 'GA', playerId: gk.id});
+       push(evs); closeModal(); toast("Opponent goal" + (gk ? " — goal against "+first(gk.id) : "")); render();
+     });
+     document.getElementById("opp-sog").addEventListener("click", ()=>{ push([{type: 'OPP_SOG'}]); closeModal(); toast("Opponent shot on goal"); render(); });
+     document.getElementById("opp-shot").addEventListener("click", ()=>{ push([{type: 'OPP_SHOT'}]); closeModal(); toast("Opponent shot"); render(); });
+   }, 50);
+});
+
+/* Register the service worker when we're on a real origin. Opened straight from a
+   downloads folder this throws, which is fine — the app still runs, it just can't
+   install or cache. */
+function registerSW(){
+  if(!("serviceWorker" in navigator)) return;
+  if(location.protocol !== "https:" && location.hostname !== "localhost") return;
+  navigator.serviceWorker.register("sw.js").then(reg => {
+    reg.addEventListener("updatefound", () => {
+      const sw = reg.installing;
+      if(!sw) return;
+      sw.addEventListener("statechange", () => {
+        /* a new version is ready and an old one is already running */
+        if(sw.state === "installed" && navigator.serviceWorker.controller){
+          modal("A new version is ready",
+            '<div style="font-size:15px">Reload to pick it up. Your roster and the game in progress are not affected.</div>',
+            "Reload now", ()=>{ sw.postMessage("skipWaiting"); location.reload(); }, "Later");
+        }
+      });
+    });
+  }).catch(()=>{});
+}
+
+(async function init(){
+  const saved = await Store.load();
+  if(saved && saved.roster){
+    S = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), saved); S.settings = Object.assign({}, DEFAULTS.settings, saved.settings||{}); S.game = Object.assign(newGame(), saved.game||{}); S.game.adj = S.game.adj || {};
+    S.roster.forEach(p => { if(!p.elig) p.elig = newElig(); });
+    if(!S.lineups) S.lineups = [];
+    if(!S.game.shift) S.game.shift = 1; S.game.log.forEach(e => { if(!e.sh) e.sh = 1; if(!e.eid) e.eid = uid(); });
+    if(S.game.running){ S.game.base = Math.min(S.game.base, S.settings.periodLen*60); S.game.running = false; S.game.startedAt = null; }
+  }
+  document.body.classList.toggle("sun", !!S.settings.sun); document.body.classList.toggle("adv", !!S.settings.advanced);
+  buildTabs(); render(); setInterval(tick, 400); registerSW();
+})();
+</script>
+</body>
+</html>

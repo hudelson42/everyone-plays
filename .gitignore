@@ -1,0 +1,12 @@
+# Python / test runs
+__pycache__/
+*.pyc
+.venv/
+
+# OS clutter
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local-only Claude Code settings
+.claude/settings.local.json
