@@ -237,6 +237,40 @@ def main():
               legacy_break["period"] == 2 and legacy_break["running"], str(legacy_break))
 
         # ---------------------------------------------------------------
+        section("Undo and shift numbers")
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        und = pg.evaluate("""(() => {
+          const st = compute(), lay = fieldLayout(st), bench = S.roster.find(p => !st[p.id].onBand), out = lay.slots.DEF[0];
+          doPair(out, bench.id); render(); undoLast();
+          return { msg: document.querySelector('.toast').textContent, back: compute()[out].onBand === 'DEF' }; })()""")
+        check("undo says what it undid", "on for" in und["msg"] and und["back"], str(und))
+
+        pe = pg.evaluate("""(() => {
+          S.settings.periods = 2; S.game.running = true; S.game.startedAt = Date.now() - 1000; S.game.base = 1500; tick();
+          const moved = S.game.period; undoLast();
+          const r = { moved, period: S.game.period, base: Math.round(S.game.base), onBreak: S.game.onBreak,
+                      msg: document.querySelector('.toast').textContent, ok: selfCheck().indexOf('FAIL') === -1 };
+          S.game.running = true; S.game.startedAt = Date.now() - 1000; tick();
+          startClock(); stopClock();
+          const n = S.game.log.length; undoLast(); r.refused = S.game.log.length === n && S.game.period === 2;
+          return r; })()""")
+        check("undoing the end of a period puts the game back in that period",
+              pe["moved"] == 2 and pe["period"] == 1 and pe["base"] == 1500 and not pe["onBreak"] and pe["ok"]
+              and "end of period 1" in pe["msg"], str(pe))
+        check("but not once the next period has started", pe["refused"], str(pe))
+
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        num = pg.evaluate("""(() => {
+          S.settings.periods = 2; S.game.running = true; S.game.startedAt = Date.now() - 1000; S.game.base = 1500; tick();
+          S.game.next = null; autoFillNext(); activeTab = 'next'; render();
+          const label = document.querySelector('#v-next .card b').textContent;
+          const e = planDiff(); beginNewShift(); push(e);
+          const sent = S.game.log[S.game.log.length - 1].sh; activeTab = 'field'; render();
+          return { label, sent }; })()""")
+        check("the Next tab's shift number matches the shift that gets sent",
+              num["label"] == f"Shift {num['sent']}", str(num))
+
+        # ---------------------------------------------------------------
         section("Positions")
         bad = pg.evaluate("""(() => { const out = [], was = [S.settings.teamSize, S.settings.formationIdx];
           for (const k in FORMATIONS) FORMATIONS[k].forEach((f, idx) => {
@@ -522,6 +556,15 @@ def main():
         check("press-and-hold buzz works with Vibrate off", buzz["on"] == 1, f"{buzz['on']} buzz")
         check("press-and-hold buzz turns off on its own", buzz["off"] == 0, f"{buzz['off']} buzz")
         pg.wait_for_timeout(300)
+        novib = pg.evaluate("""(() => { const had = navigator.vibrate;
+          Object.defineProperty(navigator, 'vibrate', { value: undefined, configurable: true });
+          activeTab = 'setup'; render();
+          const hidden = !document.querySelector('[data-tog="s-vib"]') && !document.querySelector('[data-tog="s-dragbuzz"]');
+          Object.defineProperty(navigator, 'vibrate', { value: had, configurable: true });
+          render(); const shown = !!document.querySelector('[data-tog="s-vib"]');
+          activeTab = 'field'; render(); return { hidden, shown }; })()""")
+        check("vibration settings are hidden where the phone can't vibrate (iPhone)",
+              novib["hidden"] and novib["shown"], str(novib))
 
         # ---------------------------------------------------------------
         section("Layout")
@@ -532,7 +575,7 @@ def main():
             for advanced in (False, True):
                 pg.evaluate(f"S.settings.advanced = {str(advanced).lower()}; render();")
                 for tab in ("field", "next", "clock", "times", "log", "roster", "help", "setup"):
-                    pg.click(f'#tabs button[data-tab="{tab}"]')
+                    pg.evaluate(f"activeTab = '{tab}'; render();")
                     pg.wait_for_timeout(120)
                     if pg.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth"):
                         overflow.append(f"{tab}@{width}")
@@ -544,6 +587,31 @@ def main():
         check("the Ko-fi link is on Setup and opens safely",
               tip is not None and tip["href"] == "https://ko-fi.com/hudelson" and "noopener" in tip["rel"], str(tip))
         pg.set_viewport_size({"width": 390, "height": 844})
+
+        nav = pg.evaluate("""(() => { activeTab = lastTab = 'field'; render();
+          const tabs = [...document.querySelectorAll('#tabs button')].map(b => b.dataset.tab);
+          document.getElementById('tb-clockbtn').click();
+          const clock = activeTab === 'clock' && document.getElementById('v-clock').classList.contains('active');
+          document.getElementById('c-back').click();
+          const back = activeTab;
+          document.querySelector('#tabs button[data-tab="setup"]').click();
+          document.getElementById('s-help-top').click();
+          const help = activeTab === 'help';
+          document.getElementById('h-back').click();
+          return { tabs, clock, back, help, helpBack: activeTab }; })()""")
+        check("six tabs, with the clock screen and Help off the tab bar",
+              nav["tabs"] == ["field", "next", "times", "log", "roster", "setup"], str(nav["tabs"]))
+        check("tapping the clock opens game controls, and Back returns", nav["clock"] and nav["back"] == "field", str(nav))
+        check("Help opens from Setup and Back returns there", nav["help"] and nav["helpBack"] == "setup", str(nav))
+        order = pg.evaluate("""(() => { activeTab = 'field'; render();
+          const bench = [...document.querySelectorAll('#v-field h3')].find(h => h.textContent === 'Bench');
+          const reset = document.getElementById('reset-shift');
+          return !!(bench && reset && (bench.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING)); })()""")
+        check("the bench comes right after the field, before the shift buttons", order)
+        head = pg.evaluate("""(() => { activeTab = 'next'; render();
+          const row = document.getElementById('n-auto').parentElement; const r = row.contains(document.getElementById('n-send'));
+          activeTab = 'field'; render(); return r; })()""")
+        check("Auto-fill and Send them on sit together at the top of Next", head)
 
         # ---------------------------------------------------------------
         section("Persistence")

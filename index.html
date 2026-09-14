@@ -49,6 +49,10 @@ button{background:none;border:none;padding:0;cursor:pointer}
 }
 #tb-clock{font-size:26px;font-weight:700;letter-spacing:-.5px}
 #tb-period{font-size:11px;color:var(--ink-dim);margin-top:-2px}
+#tb-period::after{content:" ▸"}
+#tb-clockbtn{text-align:left;min-height:var(--tap)}
+.backlink{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 4px;margin:-8px 0 4px;color:var(--on);font-weight:700;font-size:14px}
+body.sun .backlink{color:#000;text-decoration:underline}
 #tb-shift{margin-left:auto;text-align:right}
 #tb-shiftval{font-size:22px;font-weight:700}
 #tb-shiftlab{font-size:10px;color:var(--ink-dim);letter-spacing:.04em}
@@ -75,7 +79,7 @@ nav#tabs button{
   flex:1;min-width:0;min-height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:3px;color:var(--ink-dim);font-size:10px;letter-spacing:.01em;padding:6px 2px;
 }
-nav#tabs button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav#tabs button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 nav#tabs button.active{color:var(--ink)}
 nav#tabs button.active svg{stroke:var(--on)}
 
@@ -129,16 +133,16 @@ body.sun .bandlab{color:#000}
 
 #pitch{--cw:98px;--avs:52px}
 .chip{
-  width:74px;min-height:74px;border-radius:var(--r);border:1px solid var(--line);
+  width:80px;min-height:80px;border-radius:var(--r);border:1px solid var(--line);
   background:var(--panel);display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:2px;padding:5px 3px;position:relative;
 }
-.band .chip{width:var(--cw);min-height:calc(var(--cw) + 12px);gap:3px}
+.band .chip{width:var(--cw);min-height:calc(var(--cw) + 20px);gap:3px}
 .band .chip .av,.band .chip .avn{
   width:var(--avs);height:var(--avs);font-size:calc(var(--avs) * .42)
 }
-.band .chip .nm{max-width:calc(var(--cw) - 8px);font-size:12px}
-.band .chip .tm{font-size:11px}
+.band .chip .nm{max-width:calc(var(--cw) - 8px);font-size:14px;font-weight:700}
+.band .chip .tm{font-size:13px}
 #ghost{position:fixed;z-index:120;pointer-events:none;transform:translate(-50%,-50%) scale(1.06);
   opacity:.96;box-shadow:0 10px 26px rgba(0,0,0,.55);border-color:var(--next)}
 .chip.dragging{opacity:.3}
@@ -167,9 +171,9 @@ body.sun .avn{color:#fff;border:1px solid #000}
   font-size:13px;font-weight:700;color:#06150E;
 }
 body.sun .chip .avn{color:#fff;border:1px solid #000}
-.chip .nm{font-size:11px;font-weight:600;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chip .tm{font-size:10px;color:var(--ink-dim)}
-.chip .pc{font-size:9px;font-weight:700;letter-spacing:.04em;color:var(--ink-dim);line-height:1}
+.chip .nm{font-size:13px;font-weight:700;max-width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip .tm{font-size:12px;color:var(--ink-dim)}
+.chip .pc{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--ink-dim);line-height:1}
 body.sun .chip .pc{color:#000}
 .chip.sel{outline:3px solid var(--next);outline-offset:-1px}
 .chip.empty{border-style:dashed;color:var(--ink-dim);font-size:11px;justify-content:center}
@@ -178,7 +182,7 @@ body.sun .chip .pc{color:#000}
 .chip.stale{border-color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
 .chip.sinbin{border-color:var(--alert);box-shadow:inset 0 0 0 2px var(--alert)}
 .chip{padding-top:11px}
-.chip .flag{position:absolute;top:2px;left:0;right:0;text-align:center;font-size:9px;letter-spacing:.03em;color:var(--next);font-weight:700}
+.chip .flag{position:absolute;top:2px;left:0;right:0;text-align:center;font-size:10px;letter-spacing:.03em;color:var(--next);font-weight:700}
 
 #benchzone,#poolzone{min-height:96px;padding-bottom:8px}
 #poolzone.droptarget{outline:3px dashed var(--alert);border-radius:var(--r)}
@@ -248,7 +252,7 @@ table.grid td.t .tot .mono{font-weight:700}
 .cnt{font-size:9px;color:var(--ink-dim);line-height:1.1}
 .chip.holding{opacity:.5;border-style:dashed}
 .chip.onnow{border-color:var(--on)}
-nav#tabs button{font-size:9px}
+nav#tabs button{font-size:11px;font-weight:600}
 .pname{display:flex;align-items:center;gap:6px;min-width:0}
 .pname b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pnum{
@@ -313,10 +317,10 @@ body.sun .prow .avn{color:#fff;border:1px solid #000}
 <div id="app">
   <header id="topbar">
     <button id="tb-go" class="mono">START</button>
-    <div>
+    <button id="tb-clockbtn" aria-label="Game clock and controls">
       <div id="tb-clock" class="mono">00:00</div>
       <div id="tb-period">Period 1</div>
-    </div>
+    </button>
     <div id="tb-score" class="adv-only" style="flex:1; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer;">
        <div style="font-weight:900; font-size:18px; letter-spacing:1px;" class="mono"><span id="sc-us">0</span>-<span id="sc-them">0</span></div>
        <div style="font-size:9px; color:var(--ink-dim); margin-top:-2px;">US - THEM</div>
@@ -745,12 +749,42 @@ function push(events, note){
   if(note) g.log.push({eid:uid(), g:gid, t, gt, sh, period:g.period, type:"NOTE", note});
   save();
 }
+/* Undo says what it undid, so a coach who tapped it by mistake knows what to redo. Undoing the
+   end of a period puts the game back in that period, but only before the next one has started. */
 function undoLast(){
   const log = S.game.log; if(!log.length){ toast("Nothing to undo"); return; }
-  const gid = log[log.length-1].g;
+  const gid = log[log.length-1].g, group = log.filter(e => e.g === gid);
+  const pe = group.find(e => e.type === "PERIOD_END");
+  if(pe){
+    const g = S.game;
+    if(pe.base === undefined || g.running || (!g.onBreak && !g.periodOver)){
+      toast("The end of period "+pe.period+" can't be undone once the next period has started"); return;
+    }
+    if(!g.periodOver){ g.priorTotal -= pe.base; g.period = pe.period; }
+    g.base = pe.base; g.periodOver = false; g.onBreak = false; g.shift = pe.shift; g.shiftStart = pe.shiftStart;
+    g.next = null; g.warned = true; g.alerted = true; g.pausedAt = Date.now(); g.nagged = false;
+  }
   while(log.length && log[log.length-1].g === gid) log.pop();
-  invalidate(); save(); render(); toast("Undone");
+  invalidate(); save(); render(); toast("Undid: "+describeGroup(group));
 }
+function describeGroup(evs){
+  const nm = id => first(id), at = e => posName(e.pos) || BANDNAME[e.band] || "";
+  const on = evs.filter(e => e.type === "ON"), off = evs.filter(e => e.type === "OFF"), mv = evs.filter(e => e.type === "MOVE");
+  const pe = evs.find(e => e.type === "PERIOD_END"); if(pe) return "end of period "+pe.period;
+  const LABEL = {GOAL:"goal", SOG:"shot on goal", SHOT:"shot", ASSIST:"assist", SAVE:"save", YELLOW:"yellow card", RED:"red card",
+                 GA:"goal against", OPP_GOAL:"opponent goal", OPP_SOG:"opponent shot on goal", OPP_SHOT:"opponent shot", NOTE:"note"};
+  const stat = evs.find(e => LABEL[e.type]);
+  if(stat && !on.length && !mv.length) return LABEL[stat.type]+(stat.playerId && stat.type.indexOf("OPP_") !== 0 ? " — "+nm(stat.playerId) : "");
+  if(on.length + off.length + mv.length > 2) return "shift change ("+on.length+" on, "+off.length+" off"+(mv.length ? ", "+mv.length+" moved" : "")+")";
+  if(on.length === 1 && off.length === 1) return nm(on[0].playerId)+" on for "+nm(off[0].playerId);
+  if(mv.length === 2) return nm(mv[0].playerId)+" and "+nm(mv[1].playerId)+" switching";
+  if(mv.length === 1) return nm(mv[0].playerId)+" to "+at(mv[0]);
+  if(on.length === 1) return nm(on[0].playerId)+" on at "+at(on[0]);
+  if(off.length === 1) return nm(off[0].playerId)+" off";
+  return "last change";
+}
+/* the number the next shift will really get — beginNewShift doesn't burn a number on an empty shift */
+function upcomingShift(){ const cur = S.game.shift; return S.game.log.some(e => (e.sh||1) === cur) ? cur + 1 : cur; }
 function beginNewShift(){
   /* don't burn a shift number on a shift that never recorded anything — it leaves
      gaps in the history that read like lost data */
@@ -1045,6 +1079,8 @@ function beep(freq, start, dur, vol){
   g.gain.setValueAtTime(vol, t0+dur-0.03); g.gain.linearRampToValueAtTime(0, t0+dur);
   o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0+dur+0.02);
 }
+/* iOS Safari has no Vibration API, so vibration settings are hidden there rather than silently doing nothing */
+function canVibrate(){ return typeof navigator.vibrate === "function"; }
 function alarm(kind){
   if(S.settings.sound){
     primeAudio();
@@ -1092,14 +1128,16 @@ function toggleClock(){ S.game.running ? stopClock() : startClock(); }
 /* A period ending moves straight to the next one, clock stopped at 0:00, so START is all it
    takes to begin it — no trip to the Clock tab. Only the last period leaves the game over. */
 function endPeriodNow(){
-  stopClock(); push([{type:"PERIOD_END"}]); alarm("end");
+  stopClock();
+  /* enough to put things back if this turns out to be a mis-tap — see undoLast */
+  push([{type:"PERIOD_END", base:S.game.base, shift:S.game.shift, shiftStart:S.game.shiftStart}]); alarm("end");
   if(S.game.period < S.settings.periods){
     const ended = S.game.period; nextPeriod();
     toast("Period "+ended+" is over. Tap START when period "+S.game.period+" begins.");
   } else { S.game.periodOver = true; save(); render(); toast("Game over"); }
 }
 /* Doesn't switch tabs when the buzzer ends a period on its own — the Field and Next tabs say
-   what's happening instead. A coach who taps "Start period" on the Clock tab lands on the lineup. */
+   what's happening instead. A coach who taps "Start period" on the clock screen lands on the lineup. */
 function nextPeriod(toLineup){
   S.game.priorTotal += S.game.base; S.game.base = 0; S.game.period++; S.game.periodOver = false; S.game.pausedAt = null; S.game.onBreak = true;
   beginNewShift(); save();
@@ -1212,23 +1250,29 @@ document.getElementById("modalok").addEventListener("click", ()=>{ const fn = mo
 const TABS = [
   {id:"field", label:"Field", icon:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><circle cx="12" cy="12" r="2.5"/>'},
   {id:"next", label:"Next", icon:'<path d="M4 12h13"/><path d="M12 7l5 5-5 5"/><path d="M20 5v14"/>'},
-  {id:"clock", label:"Clock", icon:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'},
   {id:"times", label:"Minutes", icon:'<path d="M4 6h16M4 12h16M4 18h10"/>'},
   {id:"log", label:"History", icon:'<path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/>'},
   {id:"roster", label:"Roster", icon:'<circle cx="9" cy="9" r="3"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 8h5M18.5 5.5v5"/>'},
-  {id:"help", label:"Help", icon:'<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.2 2.9c-.6.2-.8.7-.8 1.2v.4"/><path d="M12 17h.01"/>'},
   {id:"setup", label:"Setup", icon:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>'}
 ];
-let activeTab = "field";
+/* Six tabs, so the labels can be big enough to hit with cold hands. The clock screen opens from
+   the clock in the top bar, and Help from Setup; both have a Back link. */
+const VIEWS = ["field","next","clock","times","log","roster","help","setup"];
+let activeTab = "field", lastTab = "field";
 function buildTabs(){
   const nav = document.getElementById("tabs");
   nav.innerHTML = TABS.map(t => '<button data-tab="'+t.id+'"><svg viewBox="0 0 24 24">'+t.icon+'</svg>'+t.label+'</button>').join("");
-  nav.querySelectorAll("button").forEach(b => b.addEventListener("click", ()=>{ activeTab = b.dataset.tab; selected = null; nextSel = null; render(); document.querySelector("main").scrollTop = 0; }));
+  nav.querySelectorAll("button").forEach(b => b.addEventListener("click", ()=>{ activeTab = lastTab = b.dataset.tab; selected = null; nextSel = null; render(); document.querySelector("main").scrollTop = 0; }));
 }
 function paintTabs(){
-  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTab));
-  TABS.forEach(t => document.getElementById("v-"+t.id).classList.toggle("active", t.id === activeTab));
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTab || (activeTab === "help" && b.dataset.tab === "setup")));
+  VIEWS.forEach(id => document.getElementById("v-"+id).classList.toggle("active", id === activeTab));
 }
+function openView(id){
+  if(activeTab !== "clock" && activeTab !== "help") lastTab = activeTab;
+  activeTab = id; selected = null; nextSel = null; render(); document.querySelector("main").scrollTop = 0;
+}
+function goBack(){ activeTab = (lastTab === "clock" || lastTab === "help") ? "field" : lastTab; render(); document.querySelector("main").scrollTop = 0; }
 
 /* ============================================================
    FIELD
@@ -1298,14 +1342,15 @@ function renderField(){
       '<div class="row" style="margin-top:12px"><button class="btn primary" id="go-roster">Add players</button>'+
       '<button class="btn ghost" id="go-help">How it works</button></div></div>';
     document.getElementById("go-roster").addEventListener("click", ()=>{ activeTab="roster"; render(); });
-    document.getElementById("go-help").addEventListener("click", ()=>{ activeTab="help"; render(); });
+    document.getElementById("go-help").addEventListener("click", ()=>openView("help"));
     const ft0 = document.getElementById("f-team"); if(ft0) ft0.addEventListener("click", openTeams);
     return;
   }
 
   document.getElementById("v-field").innerHTML =
-    teamBar("f-team") + periodCard + banner + preBar + upStrip + pitch + '<div class="row" style="margin-bottom:10px"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div><h3>Bench</h3>' + benchHTML +
-    (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap an open spot then a player, tap a player then a spot, or tap two players to swap them. Press and hold to drag instead. Changes here count as mid-shift swaps.</div>');
+    teamBar("f-team") + periodCard + banner + preBar + upStrip + pitch + '<h3>Bench</h3>' + benchHTML +
+    (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap a spot then a player, or two players to swap. Press and hold to drag. Changes here count as mid-shift swaps.</div>') +
+    '<div class="row" style="margin:10px 0"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div>';
 
   document.querySelectorAll("#v-field [data-chip]").forEach(el => {
     el.addEventListener("click", ()=>{ if(!suppressClick) tapChip(el.dataset.chip, el.dataset.kind); });
@@ -1591,8 +1636,10 @@ function renderNext(){
     '<div class="row" style="margin-top:8px"><button class="btn" id="n-gk">Put '+esc(first(gkList[0].p.id))+' in goal</button><button class="btn ghost" id="n-gklist">See everyone</button></div></div>' : '';
   const summary = placed ? comingOn+" on · "+comingOff+" off"+(moving?" · "+moving+" switching spots":"") : "Nothing planned yet. Auto-fill it, or drag players into the spots you want to change.";
   document.getElementById("v-next").innerHTML =
-    '<div class="card" style="margin-bottom:10px">'+(S.game.onBreak ? '<div class="muted" style="margin-bottom:6px">Setting up period '+S.game.period+'. Send them on, then tap START when play begins.</div>' : '')+'<b>Shift '+(S.game.shift+1)+'</b> <span class="muted">· '+summary+'</span><div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn ghost" id="n-load">Load lineup</button><button class="btn ghost" id="n-save"'+(placed?"":" disabled")+'>Save</button></div><div class="row" style="margin-top:8px"><button class="btn ghost wide" id="n-clear"'+(placed?"":" disabled")+'>Clear plan</button></div><button class="btn primary wide" id="n-send" style="margin-top:8px"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes to send")+'</button></div>'+
-    gkCard + pitch + '<div class="hint">Faded players are holding their spot — leave a slot alone and nobody there changes. Tap a spot then a player, tap a player then a spot, or press and hold to drag.</div><h3>Available — lowest minutes first</h3>'+poolHTML;
+    '<div class="card" style="margin-bottom:10px">'+(S.game.onBreak ? '<div class="muted" style="margin-bottom:6px">Setting up period '+S.game.period+'. Send them on, then tap START when play begins.</div>' : '')+'<b>Shift '+upcomingShift()+'</b> <span class="muted">· '+summary+'</span>'+
+    '<div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn primary" id="n-send"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes")+'</button></div>'+
+    '<div class="row" style="margin-top:6px"><button class="btn ghost" id="n-load">Load</button><button class="btn ghost" id="n-save"'+(placed?"":" disabled")+'>Save</button><button class="btn ghost" id="n-clear"'+(placed?"":" disabled")+'>Clear</button></div></div>'+
+    gkCard + pitch + '<div class="hint">Faded players stay where they are. Tap a spot then a player, or press and hold to drag.</div><h3>Available — lowest minutes first</h3>'+poolHTML;
 
   document.querySelectorAll("#v-next [data-chip],#v-next [data-nslot]").forEach(el => {
     el.addEventListener("click", ()=>{
@@ -1688,7 +1735,7 @@ function sendNextShift(){
     const w = whereOn(e.playerId, lay);
     return '<div class="stage">'+nm+' switches '+(w ? 'from '+esc(whereName(w))+' ' : '')+'to '+to+'</div>';
   }).join("");
-  modal("Send on shift "+(S.game.shift+1), lines, "Make these changes", ()=>{ beginNewShift(); push(ev); nextSel = null; activeTab = "field"; render(); toast("Shift "+S.game.shift+" is on"); });
+  modal("Send on shift "+upcomingShift(), lines, "Make these changes", ()=>{ beginNewShift(); push(ev); nextSel = null; activeTab = "field"; render(); toast("Shift "+S.game.shift+" is on"); });
 }
 
 /* ============================================================
@@ -1697,10 +1744,12 @@ function sendNextShift(){
 function renderClock(){
   const g = S.game, s = S.settings, done = g.period >= s.periods && g.periodOver;
   document.getElementById("v-clock").innerHTML =
+    '<button class="backlink" id="c-back">‹ Back</button>'+
     '<div class="card" style="text-align:center"><div class="muted">Period '+g.period+' of '+s.periods+'</div><div class="mono" id="big-clock" style="font-size:var(--fs-clock);font-weight:700;letter-spacing:-2px">00:00</div><div class="muted" id="big-left"></div><div style="margin-top:14px" class="muted">Shift clock</div><div class="mono" id="big-shift" style="font-size:34px;font-weight:700">0:00</div><div class="row" style="margin-top:14px"><button class="btn primary" id="c-toggle">'+(g.running?"Pause":"Start")+'</button><button class="btn" id="c-shift">Restart shift</button></div></div>'+
     (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? '<button class="btn primary wide" id="c-newgame">Start a new game</button>' : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End period '+g.period+' now</button><div class="muted" style="margin-top:8px">The clock stops on its own at '+s.periodLen+' minutes. Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
     '<div class="card"><h2>Game controls</h2><div class="row" style="margin-bottom:8px"><button class="btn" id="c-note">Add a note</button><button class="btn ghost" id="c-undo">Undo last</button></div><button class="btn warn wide" id="c-new">New game</button><div class="muted" style="margin-top:8px">New game clears the clock and all minutes, files this game in History, and keeps your roster and settings.</div></div>';
 
+  document.getElementById("c-back").addEventListener("click", goBack);
   document.getElementById("c-toggle").addEventListener("click", toggleClock);
   document.getElementById("c-shift").addEventListener("click", ()=>{ resetShiftClock(); save(); render(); });
   const ce = document.getElementById("c-end"); if(ce) ce.addEventListener("click", ()=>modal("End period "+g.period+"?", "The clock stops and minutes stop accruing.", "End period", endPeriodNow));
@@ -1884,7 +1933,7 @@ function renderSeason(){
     '<td class="t mono">'+(r.share == null ? "–" : Math.round(r.share*100)+"%")+'</td></tr>').join("");
   const lim = (v,l) => '<button data-lim="'+v+'" class="'+(seasonLimit === v ? "on" : "")+'">'+l+'</button>';
   document.getElementById("v-times").innerHTML = viewToggle()+
-    (!games.length ? '<div class="card">No games yet. This game shows up here once play starts, and every game you file with <b>New game</b> on the Clock tab adds to the season.</div>' :
+    (!games.length ? '<div class="card">No games yet. This game shows up here once play starts, and every game you file with <b>New game</b> (tap the clock at the top) adds to the season.</div>' :
     '<div class="seg" style="margin-bottom:10px">'+lim(0,"All games")+lim(10,"Last 10")+lim(5,"Last 5")+'</div>'+
     '<div class="muted" style="margin:0 2px 8px">'+finished+' finished game'+(finished === 1 ? '' : 's')+(live ? ' plus the one in progress' : '')+'</div>'+
     (adv && (team.record || team.gf || team.ga) ? '<div class="card"><b>Record</b> '+team.w+'–'+team.l+'–'+team.d+' <span class="muted">W–L–D</span><div class="muted" style="margin-top:4px">Goals '+team.gf+'–'+team.ga+' · Shots '+team.shots+'–'+team.oppShots+' · On goal '+team.sog+'–'+team.oppSog+'</div></div>' : '')+
@@ -2319,11 +2368,12 @@ function shrink(file, cb){
 function renderHelp(){
   const q = (t,a) => '<div class="helpq">'+t+'</div><div class="helpa">'+a+'</div>';
   document.getElementById("v-help").innerHTML =
+    '<button class="backlink" id="h-back">‹ Back</button>'+
     '<div class="card">'+
       '<h2>The short version</h2>'+
       '<div class="startrow"><b>1</b><div>Add players on <b>Roster</b>.</div></div>'+
       '<div class="startrow"><b>2</b><div>On <b>Field</b>, tap an open spot then tap a player. Repeat until the field is full.</div></div>'+
-      '<div class="startrow"><b>3</b><div>Tap <b>START</b> at the top left to run the clock.</div></div>'+
+      '<div class="startrow"><b>3</b><div>Tap <b>START</b> at the top left to run the clock. Tap the clock itself for period controls, notes and <b>New game</b>.</div></div>'+
       '<div class="startrow"><b>4</b><div>When the buzzer goes, tap <b>Send them on</b>.</div></div>'+
     '</div>'+
     '<div class="card">'+
@@ -2332,7 +2382,7 @@ function renderHelp(){
       q("How do I move players around?",
         "Every spot on the field is a specific position — left D, sweeper, striker and so on. Tap a player, then tap exactly where they should go: another player to trade spots, or an open position. You will be asked to confirm.<br><br>Or press and hold a player and drag them onto the spot. Dragging takes effect straight away, with no confirmation.")+
       q("Who picks the next shift?",
-        "The app keeps one ready for you, built around who has played least. Everyone already on the field stays in the position they are standing in unless swapping ends evens out their time.<br><br>Players coming on go to the open positions they have spent the least time in, so over a game kids try spots they haven't played. Turn off <b>Put subs in positions they haven't played</b> on Setup to even out only defense, midfield and attack.<br><br>Change anything you like on the Next tab before you send it.")+
+        "The app keeps one ready for you, built around who has played least. Everyone already on the field stays in the position they are standing in unless swapping ends evens out their time.<br><br>Players coming on go to the open positions they have spent the least time in, so over a game kids try spots they haven't played. Turn off <b>Try new positions</b> on Setup to even out only defense, midfield and attack.<br><br>Change anything you like on the Next tab before you send it.")+
       q("What does a faded player mean?",
         "On the <b>Next</b> tab, faded means they are holding that spot. Leave a spot alone and nobody there changes — so you can swap two players and leave the rest of the team alone.")+
       q("Before the game starts",
@@ -2342,7 +2392,7 @@ function renderHelp(){
       q("I credited the wrong player.",
         "On <b>History</b>, tap the event itself — not the ×. You get a list of who was on the field at that moment, nearest the top. Tap the right name and the clock time stays as it was. Notes can be edited the same way.")+
       q("Where are past games?",
-        "Tap <b>New game</b> on the Clock tab after each match. The finished game moves to <b>History</b>, listed by date. Tap one to see minutes and positions, fix its date or opponent, or delete it. A game's date is set when you first start the clock.<br><br>The <b>Season</b> view on the Minutes tab adds every game up: games played and missed, minutes, and each player's share of an even split of the games they came to.")+
+        "After each match, tap the clock at the top, then <b>New game</b>. The finished game moves to <b>History</b>, listed by date. Tap one to see minutes and positions, fix its date or opponent, or delete it. A game's date is set when you first start the clock.<br><br>The <b>Season</b> view on the Minutes tab adds every game up: games played and missed, minutes, and each player's share of an even split of the games they came to.")+
       q("Somebody got hurt.",
         "Tap them on the Field tab, then <b>Hurt — sub out now</b>. They come straight off and the app offers the fairest replacement.")+
       q("Is playing time really equal?",
@@ -2359,15 +2409,28 @@ function renderHelp(){
         "Setup has a <b>Run self-check</b> button. It confirms the minutes add up, nobody is on the field twice, and saving is working.")+
     '</div>'+
     '<div class="card"><h2>Not sure about a button?</h2><div class="muted">Nothing on the Field or Next tab is permanent. Undo is always one tap away, and the clock keeps running either way.</div></div>';
+  document.getElementById("h-back").addEventListener("click", goBack);
 }
 function renderSetup(){
   const s = S.settings, list = FORMATIONS[s.teamSize] || FORMATIONS[7], sizes = [4,5,6,7,8,9,10,11];
   document.getElementById("v-setup").innerHTML =
+    '<div class="row" style="margin-bottom:10px"><button class="btn" id="s-help-top">How it works</button></div>'+
     '<div class="card"><h2>Teams</h2><div class="muted" style="margin-bottom:8px">This is <b>'+esc(activeTeam().name)+'</b>'+(TEAMS.list.length > 1 ? ', one of '+TEAMS.list.length+' teams' : '')+'. Each team keeps its own roster, settings, minutes and history. Sun mode, sound and vibration are the same for every team.</div><div class="row"><button class="btn" id="t-switch">'+(TEAMS.list.length > 1 ? "Switch or add" : "Add a team")+'</button><button class="btn ghost" id="t-rename">Rename</button></div>'+(TEAMS.list.length > 1 ? '<button class="btn warn wide" id="t-delete" style="margin-top:8px">Delete this team</button>' : '')+'</div>'+
     '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b><div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
     '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
     '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
-    '<div class="card"><h2>Alerts and display</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz when you press and hold a player",s.dragBuzz!==false)+toggleRow("s-pause","Remind me if the clock stays paused mid-game",s.pauseReminder!==false)+toggleRow("s-confirm","Confirm changes made by tapping",s.confirmChanges!==false)+toggleRow("s-auto","Keep the next shift ready automatically",s.autoPlan!==false)+toggleRow("s-rot","Rotate players between defense and attack",s.rotate)+toggleRow("s-fresh","Put subs in positions they haven't played",s.freshPositions!==false)+toggleRow("s-seasonbal","Even out playing time across past games",!!s.seasonBalance)+switchField(s.maxSwitch)+'<div class="adv-only">'+toggleRow("s-yc","Yellow card sends the player to a sin bin",!!s.ycSinBin)+toggleRow("s-gk","Suggest who goes in goal next",!!s.goalieRotation)+'</div>'+toggleRow("s-sun","Sun mode — maximum contrast",s.sun)+'<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
+    '<div class="card"><h2>Alerts</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+
+      (canVibrate()
+        ? toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz on press and hold",s.dragBuzz!==false)
+        : '<div class="muted" style="margin-bottom:8px">This browser can\'t vibrate (iPhones don\'t allow it from web pages), so vibration options are hidden.</div>')+
+      toggleRow("s-pause","Paused-clock reminder",s.pauseReminder!==false)+
+      '<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button></div></div>'+
+    '<div class="card"><h2>How subs are picked</h2>'+toggleRow("s-auto","Keep next shift ready",s.autoPlan!==false)+toggleRow("s-rot","Swap defense and attack",s.rotate)+
+      toggleRow("s-fresh","Try new positions",s.freshPositions!==false)+toggleRow("s-seasonbal","Balance past games",!!s.seasonBalance)+switchField(s.maxSwitch)+
+      '<div class="adv-only">'+toggleRow("s-gk","Suggest next goalie",!!s.goalieRotation)+toggleRow("s-yc","Yellow card sin bin",!!s.ycSinBin)+'</div>'+
+      '<div class="muted">How it works explains each of these.</div></div>'+
+    '<div class="card"><h2>Screen and controls</h2>'+toggleRow("s-confirm","Confirm tap changes",s.confirmChanges!==false)+toggleRow("s-sun","Sun mode",s.sun)+
+      '<div class="row" style="margin-top:8px"><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
     '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone, and includes every team.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
     '<div class="card"><h2>About this app</h2><div class="muted" style="line-height:1.5">'+
       'Everyone Plays tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
@@ -2399,7 +2462,8 @@ function renderSetup(){
   document.getElementById("s-switch").addEventListener("change", e => { S.settings.maxSwitch = e.target.value === "" ? null : parseInt(e.target.value); save(); });
   bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-dragbuzz", v => S.settings.dragBuzz = v); bindTog("s-pause", v => S.settings.pauseReminder = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-fresh", v => S.settings.freshPositions = v); bindTog("s-seasonbal", v => S.settings.seasonBalance = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-gk", v => S.settings.goalieRotation = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
   document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
-  document.getElementById("s-help").addEventListener("click", ()=>{ activeTab = "help"; render(); });
+  document.getElementById("s-help").addEventListener("click", ()=>openView("help"));
+  document.getElementById("s-help-top").addEventListener("click", ()=>openView("help"));
   document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));
   document.getElementById("s-dl").addEventListener("click", ()=>buildBackup().then(text => saveFile(backupName(), text, "application/json")));
   const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(), text, "application/json", "Everyone Plays backup")));
@@ -2476,7 +2540,7 @@ function describeFormation(){
   return parts.join(" · ") + " = " + ((f.gk?1:0)+f.d+f.m+f.f) + " on the field.";
 }
 function switchField(v){
-  return '<label class="field"><span>Most players who change position in one shift</span><select id="s-switch">'+
+  return '<label class="field"><span>Position changes per shift</span><select id="s-switch">'+
     '<option value=""'+(v == null ? " selected" : "")+'>No limit</option>'+
     [0,1,2,3,4,5,6,7,8,9,10].map(k => '<option value="'+k+'"'+(v === k ? " selected" : "")+'>'+k+'</option>').join("")+'</select></label>';
 }
@@ -2497,6 +2561,7 @@ function render(){
 }
 
 document.getElementById("tb-go").addEventListener("click", toggleClock);
+document.getElementById("tb-clockbtn").addEventListener("click", ()=>openView("clock"));
 document.getElementById("tb-score").addEventListener("click", ()=>{
    const sc = computeMatchScore();
    const body = `

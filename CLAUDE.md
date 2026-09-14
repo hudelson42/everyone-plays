@@ -105,6 +105,17 @@ begins it. It doesn't switch tabs on its own; the Field and Next tabs say what's
 happening. Only the last period sets `periodOver`, and START then offers a new
 game. Coaches used to have to find the Clock tab to start period 2.
 
+**Six tabs.** Field, Next, Minutes, History, Roster, Setup. The clock screen
+opens from the clock in the top bar, and Help from Setup; both are views with a
+Back link, not tabs. Eight tabs made the labels too small to hit outdoors.
+
+**Undo names what it undid** (`describeGroup()`). Undoing a `PERIOD_END` restores
+the period from the `base`, `shift` and `shiftStart` stored on the event, and is
+refused once the next period has started.
+
+**Vibration settings are hidden where `navigator.vibrate` doesn't exist** (iOS
+Safari), rather than showing switches that do nothing.
+
 **The keeper holds their spot** unless moved manually.
 
 **Tapping confirms, dragging doesn't.** Successive taps are easy to trigger by

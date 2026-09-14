@@ -62,7 +62,8 @@ the only copy that survives.
 4. **START** — top left, runs the clock.
 5. When the buzzer goes, tap **Send them on**.
 
-The **Help** tab covers the rest.
+**How it works**, at the top of Setup, covers the rest. Tap the clock at the top
+for period controls, notes and New game.
 
 ## Running it yourself
 
