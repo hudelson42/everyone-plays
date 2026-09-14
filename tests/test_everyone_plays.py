@@ -659,6 +659,24 @@ def main():
               tip is not None and tip["href"] == "https://ko-fi.com/hudelson" and "noopener" in tip["rel"], str(tip))
         pg.set_viewport_size({"width": 390, "height": 844})
 
+        # a real Android phone is about 412 px wide — this is the width the overlap was seen at
+        pg.set_viewport_size({"width": 412, "height": 780})
+        fit = pg.evaluate("""(() => {
+          activeTab = 'field'; selected = null; render();
+          const r0 = document.querySelector('#v-field .band .chip').getBoundingClientRect();
+          selected = { t: 'p', id: fieldLayout().slots.DEF[1], kind: 'field' }; render();
+          document.querySelector('main').scrollTop = 0;
+          const covered = [...document.querySelectorAll('#v-field .selbar button')].filter(b => {
+            const r = b.getBoundingClientRect();
+            if (r.bottom <= 0 || r.top >= innerHeight) return false;
+            const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return !el || !el.closest('.selbar'); }).map(b => b.textContent);
+          selected = null; render();
+          return { h: Math.round(r0.height), w: Math.round(r0.width), covered }; })()""")
+        check("player cards stay compact on a 412 px phone", fit["h"] <= 115 and fit["w"] <= 92, str(fit))
+        check("nothing on the field covers the selected-player buttons", not fit["covered"], str(fit))
+        pg.set_viewport_size({"width": 390, "height": 844})
+
         nav = pg.evaluate("""(() => { activeTab = lastTab = 'field'; render();
           const tabs = [...document.querySelectorAll('#tabs button')].map(b => b.dataset.tab);
           document.getElementById('tb-clockbtn').click();

@@ -119,6 +119,7 @@ body.sun .seg button.on{color:#fff;background:var(--on)}
 #pitch{
   background:var(--turf);border:1px solid var(--line);border-radius:var(--r);
   padding:10px 8px;margin-bottom:12px;position:relative;overflow:hidden;
+  isolation:isolate; /* keeps the bands' z-index inside the pitch, so the selected-player bar can sit on top */
 }
 #pitch::before{
   content:"";position:absolute;left:8px;right:8px;top:50%;height:1px;background:var(--turf-line);
@@ -137,7 +138,7 @@ body.sun .bandlab{color:#000}
   background:var(--panel);display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:2px;padding:5px 3px;position:relative;
 }
-.band .chip{width:var(--cw);min-height:calc(var(--cw) + 20px);gap:3px}
+.band .chip{width:var(--cw);min-height:0;gap:2px;padding:12px 3px 6px}
 .band .chip .av,.band .chip .avn{
   width:var(--avs);height:var(--avs);font-size:calc(var(--avs) * .42)
 }
@@ -229,7 +230,7 @@ tr.low td:last-child{color:var(--warn);font-weight:700}
 .helpa{font-size:14px;line-height:1.45;color:var(--ink-dim)}
 .helpa b{color:var(--ink)}
 .selbar{
-  position:sticky;bottom:0;background:var(--panel);border:1px solid var(--next);
+  position:sticky;bottom:0;z-index:20;box-shadow:0 -6px 16px rgba(0,0,0,.35);background:var(--panel);border:1px solid var(--next);
   border-radius:var(--r);padding:10px;margin-top:10px;font-size:13px;
 }
 
@@ -740,6 +741,15 @@ function whereOn(pid, lay){
   return null;
 }
 function whereName(w){ return w ? posName(w.code) || BANDNAME[w.band] : ""; }
+/* Player cards on the pitch: wide enough for a first name, capped so three rows fit on a phone.
+   The old caps (108 px cards, 56 px photos) made the field taller than the screen on a real
+   Android phone. */
+function pitchSize(widest){
+  const inner = Math.max(240, (window.innerWidth || 390) - 44);
+  const cw = Math.max(62, Math.min(92, Math.floor((inner - 6*(widest-1)) / widest)));
+  const avs = Math.max(28, Math.min(40, Math.round(cw * 0.42)));
+  return "--cw:"+cw+"px;--avs:"+avs+"px";
+}
 
 /* ---------------- events ---------------- */
 function push(events, note){
@@ -1317,11 +1327,9 @@ function renderField(){
   const nextIds = nextUpIds(Math.max(2, Math.ceil(S.settings.teamSize/3))), order = ["FWD","MID","DEF","GK"];
   let widest = 1;
   order.forEach(b => widest = Math.max(widest, lay.slots[b].length + lay.extra[b].length));
-  const inner = Math.max(240, (window.innerWidth || 390) - 44);
-  const cw = Math.max(62, Math.min(108, Math.floor((inner - 6*(widest-1)) / widest)));
-  const avs = Math.max(28, Math.min(56, Math.round(cw * 0.54)));
+  const pitchVars = pitchSize(widest);
 
-  let pitch = '<div id="pitch" style="--cw:'+cw+'px;--avs:'+avs+'px">';
+  let pitch = '<div id="pitch" style="'+pitchVars+'">';
   order.forEach(b => {
     const codes = posCodes(b, slotsFor(b)), extra = lay.extra[b];
     if(!codes.length && !extra.length) return;
@@ -1465,12 +1473,11 @@ function selbar(st){
        <button class="btn ghost" id="ev-yel" style="color:var(--warn);border-color:var(--warn)">Yellow</button>
        <button class="btn ghost" id="ev-red" style="color:var(--alert);border-color:var(--alert)">Red</button>
     </div>` : '';
-  return '<div class="selbar"><b>'+esc(p.name)+'</b> selected — '+
-    (isField ? "tap a bench player to sub them in, an open spot to move them, or another field player to swap." : "tap an open spot or the player they should replace.")+
+  return '<div class="selbar"><b>'+esc(p.name)+'</b> selected. '+
+    (isField ? "Tap a bench player to sub in, a spot to move, or a teammate to swap." : "Tap an open spot or the player to replace.")+
     '<div class="row" style="margin-top:8px">'+
-      (isField ? '<button class="btn warn" id="sub-hurt">Hurt — sub out now</button>' : '')+
+      (isField ? '<button class="btn warn" id="sub-hurt">Hurt: sub out</button><button class="btn ghost" id="sub-off">Take off</button>' : '')+
       '<button class="btn ghost" id="clear-sel">Clear</button></div>'+
-    (isField ? '<div class="row" style="margin-top:8px"><button class="btn ghost" id="sub-off">Take off, leave spot open</button></div>' : '')+
     evts+'</div>';
 }
 function first(id){ const p = byId(id); return p ? p.name.split(" ")[0] : "Player"; }
@@ -1630,11 +1637,9 @@ function renderNext(){
 
   const order = ["FWD","MID","DEF","GK"];
   let widest = 1; order.forEach(b => widest = Math.max(widest, slotsFor(b)));
-  const inner = Math.max(240, (window.innerWidth || 390) - 44);
-  const cw = Math.max(62, Math.min(108, Math.floor((inner - 6*(widest-1)) / widest)));
-  const avs = Math.max(28, Math.min(56, Math.round(cw * 0.54)));
+  const pitchVars = pitchSize(widest);
 
-  let pitch = '<div id="pitch" style="--cw:'+cw+'px;--avs:'+avs+'px">';
+  let pitch = '<div id="pitch" style="'+pitchVars+'">';
   order.forEach(b => {
     if(!slotsFor(b)) return;
     pitch += '<div class="band">';
@@ -2448,7 +2453,7 @@ function renderHelp(){
       q("Where are past games?",
         "After each match, tap the clock at the top, then <b>New game</b>. The finished game moves to <b>History</b>, listed by date. Tap one to see minutes and positions, fix its date or opponent, or delete it. A game's date is set when you first start the clock.<br><br>The <b>Season</b> view on the Minutes tab adds every game up: games played and missed, minutes, and each player's share of an even split of the games they came to.")+
       q("Somebody got hurt.",
-        "Tap them on the Field tab, then <b>Hurt — sub out now</b>. They come straight off and the app offers the fairest replacement.")+
+        "Tap them on the Field tab, then <b>Hurt: sub out</b>. They come straight off and the app offers the fairest replacement.")+
       q("Is playing time really equal?",
         "The <b>Minutes</b> tab is the record. Each cell shows time played, and underneath it how many times they went into that spot. Goalie minutes count toward a player's total. Tap a name to see time in each specific position.<br><br>Tap any time to correct it if something got logged wrong.")+
       q("I made a mistake.",

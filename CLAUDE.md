@@ -119,6 +119,11 @@ available player, and the toast names them. Save on the Next tab saves the plan
 (`saveLineup(name, true)` uses `resolvePlan()`); Save from the field saves the
 field.
 
+**Pitch cards are capped** at 92 px wide with 40 px photos (`pitchSize()`), so
+three rows fit on a phone. The selected-player bar is sticky with `z-index:20`,
+and `#pitch` uses `isolation:isolate` so the bands' `z-index` can't paint over
+it. A real Android test showed oversized cards covering its buttons.
+
 **Six tabs.** Field, Next, Minutes, History, Roster, Setup. The clock screen
 opens from the clock in the top bar, and Help from Setup; both are views with a
 Back link, not tabs. Eight tabs made the labels too small to hit outdoors.
