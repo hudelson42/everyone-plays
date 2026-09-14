@@ -249,6 +249,7 @@ the log, not stored here.
 | `seasonBalance` | `false` | Move kids who are behind over past games up the auto-fill order |
 | `goalieRotation` | `false` | Advanced: suggest who goes in goal next |
 | `pauseReminder` | `true` | Nudge when the clock stays paused mid-period |
+| `supportNotes` | `true` | Occasional Ko-fi note after a filed game (3rd, then every 5th); shared by every team |
 
 Formations are written **defense-midfield-forward-keeper**, so `3-0-3-1` is
 three at the back, no midfield, three up top, one in goal.

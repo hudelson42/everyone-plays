@@ -26,10 +26,17 @@ HISTORY.md      how the project got here, full schema, past bugs
 
 `index.html` is deliberately one file. Don't split it into modules or add a
 bundler; the ability to open it as a plain file and have it work is a feature.
-No CDN links, no web fonts, no external requests of any kind. The one outside
-link, to Ko-fi in the About card on Setup, is plain navigation the coach taps;
-it loads nothing. Keep it text-only, out of the game tabs, and out of Advanced
-mode.
+No CDN links, no web fonts, no external requests of any kind. The only outside
+links are text links to Ko-fi, which are plain navigation and load nothing. They
+appear in three places:
+- the About card on Setup;
+- the "Is this really free?" card at the bottom of Help;
+- a dismissible note after the 3rd filed game and every 5th after that
+  (`supportNoteDue()`). It shows on Field and History only until kickoff, and
+  can be turned off on Setup (`supportNotes`).
+
+Never put them on Field, Next or the clock screen during play, never in a
+pop-up or toast, and never in Advanced mode.
 
 ## The one idea that matters
 

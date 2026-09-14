@@ -402,7 +402,7 @@ function slotPos(band, i){ return posCodes(band, slotsFor(band))[i] || null; }
 const KEY = "sideline-tracker-v1";     /* the first team's data, where the app has always kept it */
 const INDEX_KEY = "sideline-teams-v1";
 /* sun mode, sound and vibration belong to the phone and the coach, not to a team */
-const SHARED = ["sun","sound","vibrate","dragBuzz"];
+const SHARED = ["sun","sound","vibrate","dragBuzz","supportNotes"];
 let TEAMS = freshTeams();               /* {v, active, list:[{id, name, key, players, bytes}], shared} */
 let storageMode = "memory";
 const memStore = {};                    /* last resort, so switching teams still works when storage is blocked */
@@ -443,7 +443,7 @@ const DEFAULTS = {
     advanced:false, teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:5,
     minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:null /* no limit */, rotate:true, freshPositions:true,
     confirmChanges:true, autoPlan:true, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
-    seasonBalance:false, goalieRotation:false, pauseReminder:true
+    seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true
   },
   game:newGame(), archive:[], lineups:[]
 };
@@ -1348,7 +1348,7 @@ function renderField(){
   }
 
   document.getElementById("v-field").innerHTML =
-    teamBar("f-team") + periodCard + banner + preBar + upStrip + pitch + '<h3>Bench</h3>' + benchHTML +
+    teamBar("f-team") + periodCard + supportCard() + banner + preBar + upStrip + pitch + '<h3>Bench</h3>' + benchHTML +
     (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap a spot then a player, or two players to swap. Press and hold to drag. Changes here count as mid-shift swaps.</div>') +
     '<div class="row" style="margin:10px 0"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div>';
 
@@ -1380,7 +1380,8 @@ function renderField(){
   }
 
   const ft = document.getElementById("f-team"); if(ft) ft.addEventListener("click", openTeams);
-  const fm = document.getElementById("f-mins"); if(fm) fm.addEventListener("click", ()=>{ activeTab = "times"; timesView = "game"; render(); });
+  bindSupportCard(document.getElementById("v-field"));
+  const fm =document.getElementById("f-mins"); if(fm) fm.addEventListener("click", ()=>{ activeTab = "times"; timesView = "game"; render(); });
   const fn = document.getElementById("f-newgame"); if(fn) fn.addEventListener("click", promptNewGame);
   const ci = document.getElementById("f-checkin"); if(ci) ci.addEventListener("click", openCheckIn);
   const fl = document.getElementById("f-lineup"); if(fl) fl.addEventListener("click", openLineups);
@@ -1766,9 +1767,29 @@ function promptNewGame(){
   const over = S.game.periodOver && S.game.period >= S.settings.periods;
   modal(over ? "Game over" : "Start a new game?", '<div style="font-size:15px;margin-bottom:10px">'+(over ? "Start a new game when you are ready. " : "")+'This game goes into History and the season totals. The roster, photos and settings stay put.</div>'+
     '<label class="field"><span>Next opponent (optional)</span><input type="text" id="ng-opp" maxlength="40"></label>', "Start new game", ()=>{
-    const opp = (document.getElementById("ng-opp").value || "").trim();
-    archiveGame(); S.game = newGame(); S.game.opponent = opp; save(); render(); toast("New game ready");
+    const opp = (document.getElementById("ng-opp").value || "").trim(), before = S.archive.length;
+    archiveGame(); S.game = newGame(); S.game.opponent = opp;
+    if(S.archive.length > before && S.settings.supportNotes !== false && supportNoteDue(S.archive.length)) S.game.supportNote = true;
+    save(); render(); toast("New game ready");
   });
+}
+/* A small thank-you with the Ko-fi link after a filed game: on the 3rd game, then every 5th.
+   It lives on the new game, shows on Field and History only until kickoff, and never appears
+   if the coach turned it off on Setup. */
+function supportNoteDue(n){ return n === 3 || (n > 3 && (n - 3) % 5 === 0); }
+function supportCard(){
+  if(S.settings.supportNotes === false || !S.game.supportNote || S.game.log.length || S.game.running) return "";
+  return '<div class="card" style="margin-bottom:10px"><b>Game filed.</b> <span class="muted">If Everyone Plays helped today, you can '+
+    '<a class="tiplink" data-sn="link" href="https://ko-fi.com/hudelson" target="_blank" rel="noopener">buy the developer a coffee</a>.</span>'+
+    '<div class="row" style="margin-top:8px"><button class="btn ghost" data-sn="close">Not now</button><button class="btn ghost" data-sn="never">Don\'t show again</button></div></div>';
+}
+/* Scoped to one view: views keep their last render in the DOM while hidden, so the same card can
+   exist on Field and History at once, and a document-wide lookup would bind the hidden copy. */
+function bindSupportCard(root){
+  const on = (k, fn) => root.querySelectorAll('[data-sn="'+k+'"]').forEach(el => el.addEventListener("click", fn));
+  on("close", ()=>{ S.game.supportNote = false; save(); render(); });
+  on("never", ()=>{ S.settings.supportNotes = false; S.game.supportNote = false; save(); render(); toast("You won't see that note again"); });
+  on("link", ()=>{ S.game.supportNote = false; save(); setTimeout(render, 300); });
 }
 const ARCHIVE_MAX = 100, LOGS_KEPT = 3;
 function archiveGame(){
@@ -2111,7 +2132,7 @@ function renderLog(){
       '<span class="s">'+(a.opponent ? 'vs <b>'+esc(a.opponent)+'</b>' : '<span class="muted">No opponent set</span>')+
       (adv && hasResult(a) ? ' · '+resultText(a.score) : '')+'</span><span class="muted">▸</span></button>';
   });
-  document.getElementById("v-log").innerHTML = gameCard+
+  document.getElementById("v-log").innerHTML = supportCard()+gameCard+
     '<div class="row" style="margin-bottom:10px"><button class="btn ghost" id="l-undo">Undo last change</button></div>'+
     (log.length ? html : '<div class="card">No shifts yet. Each rotation you send on becomes a card here, showing who lined up where.</div>')+
     (past.length ? '<h3>Past games</h3>'+pastHTML : '');
@@ -2130,6 +2151,7 @@ function renderLog(){
   }));
   document.querySelectorAll("#v-log [data-game]").forEach(el => el.addEventListener("click", ()=>showGame(el.dataset.game)));
   document.getElementById("l-edit").addEventListener("click", ()=>editGameDetails(S.game, true));
+  bindSupportCard(document.getElementById("v-log"));
   document.getElementById("l-undo").addEventListener("click", undoLast);
 }
 function gameDate(ms, long){
@@ -2408,6 +2430,7 @@ function renderHelp(){
       q("Something looks wrong.",
         "Setup has a <b>Run self-check</b> button. It confirms the minutes add up, nobody is on the field twice, and saving is working.")+
     '</div>'+
+    '<div class="card"><h2>Is this really free?</h2><div class="muted" style="line-height:1.5">Yes. No ads, no accounts, and nothing about your team leaves your phone. If it helps your team, you can <a class="tiplink" href="https://ko-fi.com/hudelson" target="_blank" rel="noopener">buy the developer a coffee</a>.</div></div>'+
     '<div class="card"><h2>Not sure about a button?</h2><div class="muted">Nothing on the Field or Next tab is permanent. Undo is always one tap away, and the clock keeps running either way.</div></div>';
   document.getElementById("h-back").addEventListener("click", goBack);
 }
@@ -2429,7 +2452,7 @@ function renderSetup(){
       toggleRow("s-fresh","Try new positions",s.freshPositions!==false)+toggleRow("s-seasonbal","Balance past games",!!s.seasonBalance)+switchField(s.maxSwitch)+
       '<div class="adv-only">'+toggleRow("s-gk","Suggest next goalie",!!s.goalieRotation)+toggleRow("s-yc","Yellow card sin bin",!!s.ycSinBin)+'</div>'+
       '<div class="muted">How it works explains each of these.</div></div>'+
-    '<div class="card"><h2>Screen and controls</h2>'+toggleRow("s-confirm","Confirm tap changes",s.confirmChanges!==false)+toggleRow("s-sun","Sun mode",s.sun)+
+    '<div class="card"><h2>Screen and controls</h2>'+toggleRow("s-confirm","Confirm tap changes",s.confirmChanges!==false)+toggleRow("s-sun","Sun mode",s.sun)+toggleRow("s-support","After-game support note",s.supportNotes!==false)+
       '<div class="row" style="margin-top:8px"><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
     '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone, and includes every team.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
     '<div class="card"><h2>About this app</h2><div class="muted" style="line-height:1.5">'+
@@ -2464,6 +2487,7 @@ function renderSetup(){
   document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
   document.getElementById("s-help").addEventListener("click", ()=>openView("help"));
   document.getElementById("s-help-top").addEventListener("click", ()=>openView("help"));
+  bindTog("s-support", v => S.settings.supportNotes = v);
   document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));
   document.getElementById("s-dl").addEventListener("click", ()=>buildBackup().then(text => saveFile(backupName(), text, "application/json")));
   const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(), text, "application/json", "Everyone Plays backup")));

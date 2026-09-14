@@ -539,6 +539,43 @@ def main():
         pg.evaluate("S.archive = []; render();")
 
         # ---------------------------------------------------------------
+        section("Support note")
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        sn = pg.evaluate("""(() => {
+          const dummy = () => ({ id: uid(), v: 2, date: Date.now() - 864e5, players: [], playerSeconds: 0 });
+          S.settings.supportNotes = true; S.archive = [dummy(), dummy()];
+          activeTab = 'field'; render(); promptNewGame(); document.getElementById('modalok').click();
+          activeTab = 'field'; render();
+          const r = { filed: S.archive.length, field: !!document.querySelector('#v-field [data-sn="link"]') };
+          activeTab = 'log'; render(); r.history = !!document.querySelector('#v-log [data-sn="link"]');
+          /* the buttons on History have to work, not the hidden copy left on Field */
+          document.querySelector('#v-log [data-sn="close"]').click();
+          r.closed = !document.querySelector('#v-log [data-sn]');
+          activeTab = 'help'; render(); r.help = !!document.querySelector('#v-help a.tiplink[href="https://ko-fi.com/hudelson"]');
+          activeTab = 'field'; render(); r.fieldGone = !document.querySelector('#v-field [data-sn]');
+          return r; })()""")
+        check("a support note appears after the 3rd filed game, on Field and History",
+              sn["filed"] == 3 and sn["field"] and sn["history"], str(sn))
+        check("Not now dismisses it, from History too", sn["closed"] and sn["fieldGone"], str(sn))
+        check("Help has a Ko-fi link", sn["help"], str(sn))
+        sn2 = pg.evaluate("""(() => {
+          const file = () => { push([{ type: 'ON', playerId: 'p0', band: 'GK', pos: 'GK' }]); promptNewGame(); document.getElementById('modalok').click(); };
+          file(); const fourth = !!S.game.supportNote;
+          const dummy = () => ({ id: uid(), v: 2, date: 0, players: [], playerSeconds: 0 });
+          S.archive = S.archive.concat([dummy(), dummy(), dummy()]);
+          S.settings.supportNotes = false; file(); const offAtEighth = !!S.game.supportNote;
+          S.settings.supportNotes = true; S.game.supportNote = true; activeTab = 'field'; render();
+          const before = !!document.querySelector('#v-field [data-sn="link"]'); startClock();
+          const after = !!document.querySelector('#v-field [data-sn="link"]'); stopClock();
+          activeTab = 'setup'; render(); const toggle = !!document.querySelector('[data-tog="s-support"]');
+          S.archive = []; S.game = newGame(); activeTab = 'field'; render();
+          return { fourth, offAtEighth, before, after, toggle }; })()""")
+        check("no note on the 4th game, and none when turned off",
+              not sn2["fourth"] and not sn2["offAtEighth"], str(sn2))
+        check("the note disappears once the game starts", sn2["before"] and not sn2["after"], str(sn2))
+        check("Setup has a switch for the note", sn2["toggle"], str(sn2))
+
+        # ---------------------------------------------------------------
         section("Haptics")
         pg.evaluate(SEED, [ROSTER, 7, False])
         pg.click('#tabs button[data-tab="field"]')
