@@ -26,7 +26,10 @@ HISTORY.md      how the project got here, full schema, past bugs
 
 `index.html` is deliberately one file. Don't split it into modules or add a
 bundler; the ability to open it as a plain file and have it work is a feature.
-No CDN links, no web fonts, no external requests of any kind.
+No CDN links, no web fonts, no external requests of any kind. The one outside
+link, to Ko-fi in the About card on Setup, is plain navigation the coach taps;
+it loads nothing. Keep it text-only, out of the game tabs, and out of Advanced
+mode.
 
 ## The one idea that matters
 

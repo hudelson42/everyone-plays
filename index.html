@@ -209,6 +209,8 @@ body.sun .startrow>b:first-child{color:#fff}
   border:1px solid var(--line);border-radius:var(--r);background:var(--panel);text-align:left;font:inherit;color:inherit}
 .teambar b{flex:1;min-width:0;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .teambar .muted{flex:none}
+.tiplink{color:var(--on);text-decoration:underline;font-weight:600}
+body.sun .tiplink{color:#000}
 .monthlab{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);margin:14px 2px 6px}
 .gamerow{display:flex;align-items:center;gap:10px;width:100%;padding:10px;margin-bottom:6px;min-height:var(--tap);
   border:1px solid var(--line);border-radius:var(--r);background:var(--panel);text-align:left;font:inherit;color:inherit}
@@ -2346,7 +2348,8 @@ function renderSetup(){
       'Everyone Plays tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
       'Everything is worked out from a log of substitutions, so the minutes are always consistent with what actually happened. Nothing leaves your phone and nothing needs a signal — it works in airplane mode.<br><br>'+
       'A few things worth knowing: goalie minutes count toward a player\'s total; an empty spot in a planned shift means whoever is there now stays; and the backup file on this page is the only copy that survives clearing your browser data.'+
-    '</div><div class="row" style="margin-top:10px"><button class="btn ghost" id="s-help">Open Help</button></div></div>';
+    '</div><div class="muted" style="margin-top:10px;line-height:1.5">Everyone Plays is free. If it helps your team, you can <a class="tiplink" href="https://ko-fi.com/hudelson" target="_blank" rel="noopener">buy the developer a coffee</a>.</div>'+
+    '<div class="row" style="margin-top:10px"><button class="btn ghost" id="s-help">Open Help</button></div></div>';
 
   document.getElementById("t-switch").addEventListener("click", openTeams);
   document.getElementById("t-rename").addEventListener("click", ()=>{

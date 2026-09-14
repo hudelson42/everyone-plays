@@ -497,6 +497,10 @@ def main():
                     if pg.evaluate("(() => { const n = document.getElementById('tabs'); return n.scrollWidth > n.clientWidth; })()"):
                         overflow.append(f"tabbar@{width}")
         check("no horizontal overflow on any tab", not overflow, ", ".join(sorted(set(overflow))))
+        tip = pg.evaluate("""(() => { const a = document.querySelector('#v-setup a.tiplink');
+          return a ? { href: a.getAttribute('href'), rel: a.rel } : null; })()""")
+        check("the Ko-fi link is on Setup and opens safely",
+              tip is not None and tip["href"] == "https://ko-fi.com/hudelson" and "noopener" in tip["rel"], str(tip))
         pg.set_viewport_size({"width": 390, "height": 844})
 
         # ---------------------------------------------------------------

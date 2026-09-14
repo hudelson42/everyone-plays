@@ -94,6 +94,11 @@ Bug reports and feature requests are welcome via GitHub Issues. If you coach
 and something about this gets in your way during a real game, that's the most
 useful thing you can tell me.
 
+## Support
+
+Everyone Plays is free, with no ads and no accounts. If it helps your team, you
+can [buy me a coffee on Ko-fi](https://ko-fi.com/hudelson).
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Use it, fork it, run it for your club. If it
