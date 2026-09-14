@@ -119,8 +119,11 @@ available player, and the toast names them. Save on the Next tab saves the plan
 (`saveLineup(name, true)` uses `resolvePlan()`); Save from the field saves the
 field.
 
-**Pitch cards are capped** at 92 px wide with 40 px photos (`pitchSize()`), so
-three rows fit on a phone. The selected-player bar is sticky with `z-index:20`,
+**The whole field fits on one screen.** Pitch cards are capped at 92 px wide
+with 40 px photos (`pitchSize()`). After each render, `fitPitch()` shrinks the
+photos (down to 24 px), then goes tight, until the pitch fits below whatever is
+above it and above the selected-player bar. While a player is selected, the
+cards above the field hide. Rotating the phone re-renders. The selected-player bar is sticky with `z-index:20`,
 and `#pitch` uses `isolation:isolate` so the bands' `z-index` can't paint over
 it. A real Android test showed oversized cards covering its buttons.
 

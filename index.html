@@ -144,6 +144,10 @@ body.sun .bandlab{color:#000}
 }
 .band .chip .nm{max-width:calc(var(--cw) - 8px);font-size:14px;font-weight:700}
 .band .chip .tm{font-size:13px}
+#pitch.tight{padding:6px}
+#pitch.tight .band{margin:3px 0}
+#pitch.tight .bandlab{display:none}
+#pitch.tight .band .chip{padding:11px 2px 3px;gap:0}
 #ghost{position:fixed;z-index:120;pointer-events:none;transform:translate(-50%,-50%) scale(1.06);
   opacity:.96;box-shadow:0 10px 26px rgba(0,0,0,.55);border-color:var(--next)}
 .chip.dragging{opacity:.3}
@@ -749,6 +753,26 @@ function pitchSize(widest){
   const cw = Math.max(62, Math.min(92, Math.floor((inner - 6*(widest-1)) / widest)));
   const avs = Math.max(28, Math.min(40, Math.round(cw * 0.42)));
   return "--cw:"+cw+"px;--avs:"+avs+"px";
+}
+/* Then make the whole pitch fit on one screen, below whatever sits above it and above the
+   selected-player bar if one is open. Runs after paintLive, because the stint times change the
+   card height. Photos shrink first (not below 24 px); if that isn't enough the pitch goes tight —
+   less padding, no band labels. Past that it scrolls rather than become unreadable. */
+function fitPitch(viewId){
+  const view = document.getElementById(viewId), main = document.querySelector("main");
+  const pitch = view ? view.querySelector("#pitch") : null;
+  if(!pitch || !main || !main.clientHeight) return;
+  const room = () => {
+    const bar = view.querySelector(".selbar");
+    const top = pitch.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+    return main.clientHeight - top - 10 - (bar ? bar.offsetHeight + 12 : 0);
+  };
+  const over = pitch.offsetHeight - room();
+  if(over <= 0) return;
+  const rows = pitch.querySelectorAll(".band").length || 1;
+  const avs = parseFloat(pitch.style.getPropertyValue("--avs")) || 40;
+  pitch.style.setProperty("--avs", Math.max(24, Math.floor(avs - over / rows)) + "px");
+  if(pitch.offsetHeight - room() > 0) pitch.classList.add("tight");
 }
 
 /* ---------------- events ---------------- */
@@ -1388,7 +1412,8 @@ function renderField(){
   }
 
   document.getElementById("v-field").innerHTML =
-    teamBar("f-team") + periodCard + supportCard() + banner + preBar + upStrip + pitch + '<h3>Bench</h3>' + benchHTML +
+    /* while a player is selected the cards above the field step aside, so field and bar both fit */
+    (selected ? '' : teamBar("f-team") + periodCard + supportCard() + banner + preBar + upStrip) + pitch + '<h3>Bench</h3>' + benchHTML +
     (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap a spot then a player, or two players to swap. Press and hold to drag. Changes here count as mid-shift swaps.</div>') +
     '<div class="row" style="margin:10px 0"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div>';
 
@@ -2619,10 +2644,17 @@ function render(){
   document.body.classList.toggle("adv", !!S.settings.advanced); paintTabs();
   if(activeTab === "field") renderField(); else if(activeTab === "next") renderNext(); else if(activeTab === "clock") renderClock(); else if(activeTab === "times") renderTimes(); else if(activeTab === "log") renderLog(); else if(activeTab === "roster") renderRoster(); else if(activeTab === "help") renderHelp(); else if(activeTab === "setup") renderSetup();
   paintClocks(); paintLive();
+  if(activeTab === "field") fitPitch("v-field"); else if(activeTab === "next") fitPitch("v-next");
 }
 
 document.getElementById("tb-go").addEventListener("click", toggleClock);
 document.getElementById("tb-clockbtn").addEventListener("click", ()=>openView("clock"));
+/* rotating the phone changes how much field fits */
+let _resizeTimer = null;
+window.addEventListener("resize", ()=>{
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(()=>{ if(!drag && (activeTab === "field" || activeTab === "next")) render(); }, 150);
+});
 document.getElementById("tb-score").addEventListener("click", ()=>{
    const sc = computeMatchScore();
    const body = `

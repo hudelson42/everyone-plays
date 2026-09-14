@@ -675,6 +675,34 @@ def main():
           return { h: Math.round(r0.height), w: Math.round(r0.width), covered }; })()""")
         check("player cards stay compact on a 412 px phone", fit["h"] <= 115 and fit["w"] <= 92, str(fit))
         check("nothing on the field covers the selected-player buttons", not fit["covered"], str(fit))
+
+        misfits = []
+        for (w, h, size, form, adv) in ((412, 760, 7, 0, True), (390, 700, 7, 0, False), (412, 800, 11, 1, True)):
+            pg.set_viewport_size({"width": w, "height": h})
+            pg.wait_for_timeout(250)
+            r = pg.evaluate("""([size, form, adv]) => {
+              S.settings.teamSize = size; S.settings.formationIdx = form; S.settings.advanced = adv;
+              S.roster = Array.from({ length: size + 4 }, (_, i) => ({ id: 'q' + i, name: 'Player ' + i, number: String(i + 1),
+                photo: null, avail: 'available', elig: newElig() }));
+              S.game = newGame();
+              const spots = []; BANDS.forEach(b => { for (let i = 0; i < slotsFor(b); i++) spots.push([b, i]); });
+              S.game.seq++;
+              spots.forEach(([b, j], i) => S.game.log.push({ eid: uid(), g: 1, t: Date.now(), gt: 0, sh: 1, period: 1,
+                type: 'ON', playerId: 'q' + i, band: b, pos: slotPos(b, j) }));
+              S.game.base = 200; invalidate(); activeTab = 'field'; selected = null; render();
+              const main = document.querySelector('main'); main.scrollTop = 0; render();
+              const pitchBottom = () => document.querySelector('#v-field #pitch').getBoundingClientRect().bottom;
+              const plain = pitchBottom() <= main.getBoundingClientRect().bottom + 1;
+              selected = { t: 'p', id: fieldLayout().slots.DEF[0], kind: 'field' }; render(); main.scrollTop = 0; render();
+              const barTop = document.querySelector('#v-field .selbar').getBoundingClientRect().top;
+              const withBar = pitchBottom() <= barTop + 1;
+              const chip = document.querySelector('#v-field .band .chip .av, #v-field .band .chip .avn').getBoundingClientRect().height;
+              selected = null; render();
+              return { plain, withBar, photo: Math.round(chip) }; }""", [size, form, adv])
+            if not (r["plain"] and r["withBar"]):
+                misfits.append(f"{size}v{size} at {w}x{h}: {r}")
+        check("the whole field fits on one screen, with or without a player selected", not misfits, "; ".join(misfits))
+        pg.evaluate(SEED, [ROSTER, 7, False])
         pg.set_viewport_size({"width": 390, "height": 844})
 
         nav = pg.evaluate("""(() => { activeTab = lastTab = 'field'; render();
