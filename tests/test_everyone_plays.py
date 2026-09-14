@@ -43,6 +43,7 @@ SEED = """([names, size, advanced]) => {
   S.settings.formationIdx = 0;
   S.settings.maxSwitch = null;
   S.settings.freshPositions = true;
+  S.settings.rotateKeeper = true;
   S.game = newGame();
   const spots = [];
   BANDS.forEach(b => { for (let i = 0; i < slotsFor(b); i++) spots.push([b, i]); });
@@ -93,11 +94,12 @@ def run_shift(pg, at_seconds):
     return diff
 
 
-def play_full_game(pg, fresh):
+def play_full_game(pg, fresh, rotates=True):
     """Two 25-minute periods of 5-minute shifts, 13 players, 7 v 7."""
     pg.evaluate(SEED, [ROSTER, 7, True])
     pg.evaluate("S.settings.periods = 2; S.settings.periodLen = 25; "
-                f"S.settings.freshPositions = {str(fresh).lower()};")
+                f"S.settings.freshPositions = {str(fresh).lower()}; "
+                f"S.settings.rotateKeeper = {str(rotates).lower()};")
     for half in range(2):
         for k in range(1, 6):
             run_shift(pg, k * 300)
@@ -163,7 +165,7 @@ def main():
         # ---------------------------------------------------------------
         section("Rotation quality")
         pg.evaluate(SEED, [ROSTER[:8], 7, False])   # thin bench, the hard case
-        pg.evaluate("S.settings.maxSwitch = 2")
+        pg.evaluate("S.settings.maxSwitch = 2; S.settings.rotateKeeper = false;")
         churn = [run_shift(pg, k * 300)["mv"] for k in range(1, 6)]
         check("position switches stay under a cap when one is set", max(churn) <= 2,
               f"per shift: {churn}, cap 2")
@@ -172,16 +174,47 @@ def main():
           let n = 0; S.game.log.forEach(e => {
             if (e.band === 'GK' && (e.type === 'ON' || e.type === 'MOVE')) n++; });
           return n - 1; })()""")
-        check("keeper is not rotated automatically", keeper_changes == 0,
+        check("with Switch goalie off, the keeper stays in goal", keeper_changes == 0,
               f"{keeper_changes} keeper changes")
+
+        kick = pg.evaluate("""(() => {
+          const seedN = n => {
+            S.roster = Array.from({ length: n }, (_, i) => ({ id: 'k' + i, name: 'Kid ' + i, number: String(i + 1),
+              photo: null, avail: 'available', elig: newElig() }));
+            S.settings.teamSize = 7; S.settings.formationIdx = 0; S.game = newGame();
+            const spots = []; BANDS.forEach(b => { for (let i = 0; i < slotsFor(b); i++) spots.push([b, i]); });
+            S.game.seq++;
+            spots.forEach(([b, j], i) => S.game.log.push({ eid: uid(), g: 1, t: Date.now(), gt: 0, sh: 1, period: 1,
+              type: 'ON', playerId: 'k' + i, band: b, pos: slotPos(b, j) }));
+            invalidate(); };
+          const plan = () => { S.game.next = null; invalidate(); autoFillNext(); const e = planDiff();
+            return { on: e.filter(x => x.type === 'ON').length, off: e.filter(x => x.type === 'OFF').length,
+                     newKeeper: ensureNext().GK[0] !== 'k0' }; };
+          const r = {};
+          S.settings.rotateKeeper = true; S.settings.minStint = 90;
+          seedN(14); r.full14 = plan();
+          seedN(14); S.game.base = 300; invalidate(); r.shiftEnd14 = plan();
+          seedN(11); r.bench11 = plan();
+          S.settings.rotateKeeper = false; seedN(14); r.holdKeeper = plan();
+          S.settings.rotateKeeper = true;
+          return r; })()""")
+        check("at kickoff the plan already brings on the whole bench",
+              kick["full14"]["on"] == 7 and kick["full14"]["off"] == 7, str(kick))
+        check("the plan made at kickoff matches the one at the end of the shift",
+              kick["full14"] == kick["shiftEnd14"], str(kick))
+        check("with a small bench, every bench player comes on at kickoff",
+              kick["bench11"]["on"] == 4 and kick["bench11"]["off"] == 4, str(kick))
+        check("the goalie switches by default", kick["full14"]["newKeeper"] and kick["bench11"]["newKeeper"], str(kick))
+        check("with Switch goalie off, the keeper is kept at kickoff too",
+              not kick["holdKeeper"]["newKeeper"] and kick["holdKeeper"]["on"] == 6, str(kick))
 
         pg.evaluate(SEED, [ROSTER[:8], 7, False])   # SEED resets to no limit
         unlimited = [run_shift(pg, k * 300)["mv"] for k in range(1, 6)]
         check("with no limit, auto-fill still settles", pg.evaluate(SELF_CHECK),
               f"per shift: {unlimited}")
 
-        # full game, two periods, default settings
-        play_full_game(pg, True)
+        # full game, two periods, keeper held in goal: outfield minutes land exactly even
+        play_full_game(pg, True, rotates=False)
         spread = pg.evaluate("""(() => { const st = compute();
           const out = S.roster.filter(p => p.id !== 'p0').map(p => st[p.id].total / 60);
           const both = S.roster.filter(p => p.id !== 'p0')
@@ -193,6 +226,21 @@ def main():
               f"{spread['lo']}–{spread['hi']} min across {spread['n']} outfield players")
         check("everyone plays both ends", spread["both"] == spread["n"],
               f"{spread['both']}/{spread['n']}")
+
+        # the default: the goalie switches each shift, so all 13 share 7 spots, and whole-shift
+        # subs can only come out even to within one shift
+        play_full_game(pg, True)
+        rot = pg.evaluate("""(() => { const st = compute();
+          const mins = S.roster.map(p => st[p.id].total / 60);
+          const keepers = []; let cur = null;
+          S.game.log.forEach(e => {
+            if ((e.type === 'ON' || e.type === 'MOVE') && e.band === 'GK' && e.playerId !== cur) { cur = e.playerId; keepers.push(cur); } });
+          return { lo: +Math.min(...mins).toFixed(1), hi: +Math.max(...mins).toFixed(1), shift: S.settings.shiftLen,
+                   changes: keepers.length - 1, distinct: new Set(keepers).size }; })()""")
+        check("with the goalie switching, minutes are even to within one shift",
+              rot["hi"] - rot["lo"] <= rot["shift"] + 0.1, f"{rot['lo']}–{rot['hi']} min across 13 players")
+        check("the goalie changes every shift over a full game",
+              rot["changes"] >= 9 and rot["distinct"] >= 9, str(rot))
 
         # ---------------------------------------------------------------
         section("Periods")

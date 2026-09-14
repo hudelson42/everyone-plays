@@ -138,7 +138,15 @@ refused once the next period has started.
 **Vibration settings are hidden where `navigator.vibrate` doesn't exist** (iOS
 Safari), rather than showing switches that do nothing.
 
-**The keeper holds their spot** unless moved manually.
+**Auto-fill plans for the end of the shift.** Players on the field are counted
+as if they finish the current shift (`left` in `autoFillNext()`), including for
+the minimum stint, so the plan built at kickoff already brings on the bench.
+Before this, everyone tied at 0 minutes and the starters stayed on.
+
+**The goalie switches each shift by default** (`rotateKeeper`). Auto-fill
+doesn't hold the keeper in goal, and puts in goal whoever has spent least time
+there. With it off, the keeper holds their spot unless moved manually, and goal
+is a last resort for incoming players.
 
 **Tapping confirms, dragging doesn't.** Successive taps are easy to trigger by
 accident; a press-and-hold drag is deliberate. Don't make these symmetric.

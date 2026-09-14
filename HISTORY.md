@@ -86,6 +86,11 @@ those players in the first open slot of their band.
 Auto-fill pins whoever is in goal. A keeper changing every rotation is its own
 problem.
 
+Changed 2026-09-14. The coach wanted the goalie switched each shift by default,
+and the plan built at kickoff to bring on the whole bench. Auto-fill now plans
+for the end of the current shift and rotates the keeper. Turning `rotateKeeper`
+off brings back the old hold.
+
 ### Tapping confirms, dragging doesn't
 
 Explicitly requested, and correct. Two successive taps are easy to trigger by
@@ -237,6 +242,7 @@ the log, not stored here.
 | `minStint` | `90` | Seconds a player must be on before auto-fill will pull them |
 | `maxSwitch` | `null` | Most players swapped front to back in one shift; `null` is no limit |
 | `rotate` | `true` | Prefer moving players between defense and attack |
+| `rotateKeeper` | `true` | Switch the goalie each shift; off holds the keeper in goal |
 | `freshPositions` | `true` | Put incoming players in the open positions they've played least |
 | `autoPlan` | `true` | Keep the next shift prepared in the background |
 | `confirmChanges` | `true` | Confirm tap-initiated changes (drag is never confirmed) |

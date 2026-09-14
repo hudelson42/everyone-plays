@@ -448,7 +448,7 @@ const DEFAULTS = {
     advanced:false, teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:5,
     minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:null /* no limit */, rotate:true, freshPositions:true,
     confirmChanges:true, autoPlan:true, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
-    seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true
+    seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true, rotateKeeper:true
   },
   game:newGame(), archive:[], lineups:[]
 };
@@ -1020,6 +1020,13 @@ function autoFillNext(){
   const st = compute(), lay = fieldLayout(st), n = ensureNext();
   BANDS.forEach(b => n[b] = n[b].map(()=>null));
   const now = gameElapsed();
+  /* Plan for the end of the shift, not this moment. Everyone on the field is counted as if they
+     finish it, so at kickoff, when nobody has minutes yet, the plan already brings on the bench
+     instead of keeping the starters on a tie. */
+  const left = Math.max(0, Math.min((S.settings.shiftLen || 5) * 60 - (now - S.game.shiftStart), periodRemaining()));
+  const total = id => st[id].total + (st[id].onBand ? left : 0);
+  const inBand = (id, b) => st[id][b] + (st[id].onBand === b ? left : 0);
+  const inPos = (id, pos) => (st[id].pos[pos] || 0) + (st[id].onPos === pos ? left : 0);
 
   const slots = [];
   BANDS.forEach(b => { for(let i=0;i<slotsFor(b);i++) slots.push({band:b, i, pos:slotPos(b, i)}); });
@@ -1033,51 +1040,81 @@ function autoFillNext(){
     lay.extra[b].forEach(id => { onNow[id] = b; });
   });
 
-  /* locked = must stay on: the keeper, and anyone who hasn't had their minimum stint */
+  /* locked = must stay on: anyone who still won't have had their minimum stint by the end of the
+     shift, and the keeper when rotateKeeper is off. By default the goalie changes every shift. */
   const locked = {};
   const minS = S.settings.minStint || 0;
+  const rotateKeeper = S.settings.rotateKeeper !== false;
   if(minS > 0) S.roster.forEach(p => {
     const r = st[p.id];
-    if(r.onBand && available(p) && (now - r.onSince) < minS) locked[p.id] = r.onBand;
+    if(r.onBand && available(p) && (now - r.onSince) + left < minS) locked[p.id] = r.onBand;
   });
   const keeper = S.roster.find(p => st[p.id].onBand === "GK");
-  if(slotsFor("GK") && keeper && available(keeper) && eligible(keeper,"GK")) locked[keeper.id] = "GK";
+  if(!rotateKeeper && slotsFor("GK") && keeper && available(keeper) && eligible(keeper,"GK")) locked[keeper.id] = "GK";
+  /* with rotateKeeper on, nobody is held in goal just for standing there */
+  const heldInGoal = (p, b) => b === "GK" && rotateKeeper && !locked[p.id];
 
   /* with seasonBalance on, a kid behind an even share over past games moves up the order */
   const season = (S.settings.seasonBalance && S.archive.length) ? seasonBalance() : null, owed = seasonOwed(season);
   const byMinutes = (a,b) => {
-    const ta = st[a.id].total - (owed[a.id]||0), tb = st[b.id].total - (owed[b.id]||0);
+    const ta = total(a.id) - (owed[a.id]||0), tb = total(b.id) - (owed[b.id]||0);
     if(ta !== tb) return ta - tb;
     const la = st[a.id].lastOff == null ? -1 : st[a.id].lastOff, lb = st[b.id].lastOff == null ? -1 : st[b.id].lastOff;
     if(la !== lb) return la - lb;
     return (parseInt(a.number)||99) - (parseInt(b.number)||99);
   };
 
-  /* A. pick the squad — locked players, then whoever has played least */
+  /* A. pick the squad — locked players, then whoever has played least. A player joins only if the
+     whole squad can still be placed where they're eligible; otherwise a full line change could
+     bring on five forwards for three forward spots. Only if nobody eligible is left does the
+     rest fill up regardless. */
+  const fits = group => {
+    const match = {};
+    const place = (p, seen) => {
+      for(let k = 0; k < slots.length; k++){
+        const s = slots[k];
+        if(seen[k] || !eligible(p, s.band) || (locked[p.id] && locked[p.id] !== s.band)) continue;
+        seen[k] = true;
+        if(!match[k] || place(match[k], seen)){ match[k] = p; return true; }
+      }
+      return false;
+    };
+    return group.every(p => place(p, {}));
+  };
   const squad = S.roster.filter(p => locked[p.id]);
-  S.roster.filter(p => available(p) && !locked[p.id]).sort(byMinutes)
-    .forEach(p => { if(squad.length < size) squad.push(p); });
+  const pool = S.roster.filter(p => available(p) && !locked[p.id]).sort(byMinutes);
+  pool.forEach(p => { if(squad.length < size && fits(squad.concat([p]))) squad.push(p); });
+  pool.forEach(p => { if(squad.length < size && squad.indexOf(p) < 0) squad.push(p); });
+  /* someone in the squad has to be able to play in goal: swap the most-played unlocked pick for the
+     least-played goalie-eligible player left out */
+  if(slotsFor("GK") && !squad.some(p => eligible(p, "GK"))){
+    const gk = pool.find(p => squad.indexOf(p) < 0 && eligible(p, "GK"));
+    const drop = squad.slice().reverse().find(p => !locked[p.id]);
+    if(gk && drop) squad[squad.indexOf(drop)] = gk;
+  }
 
   /* B. hold everyone already on the field in the exact position they're standing in */
   const free = slots.slice(), spot = {};
   const claim = s => { const k = free.indexOf(s); if(k < 0) return false; free.splice(k,1); return true; };
   squad.forEach(p => {
     const b = locked[p.id] || onNow[p.id], c = cur[p.id];
-    if(b && eligible(p,b) && c && c.band === b && claim(c)) spot[p.id] = c;
+    if(b && eligible(p,b) && c && c.band === b && !heldInGoal(p, b) && claim(c)) spot[p.id] = c;
   });
   squad.forEach(p => {
     const b = locked[p.id] || onNow[p.id];
-    if(spot[p.id] || !b || !eligible(p,b)) return;
+    if(spot[p.id] || !b || !eligible(p,b) || heldInGoal(p, b)) return;
     const s = free.find(x => x.band === b); if(s && claim(s)) spot[p.id] = s;
   });
   /* Whoever is left is coming off the bench. With freshPositions on they go to the open
      position they've spent least time in — a kid who has only played left D gets right D or
-     striker. Off, it evens out by band only. Goal is last resort either way. Times are
-     bucketed to 30 s so a few seconds' difference doesn't override the next tiebreak. */
+     striker. Off, it evens out by band only. With the keeper rotating, goal goes to whoever has
+     spent least time there; with the keeper held, goal is a last resort. Times are bucketed to
+     30 s so a few seconds' difference doesn't override the next tiebreak. */
   const fresh = S.settings.freshPositions !== false, q = sec => Math.round((sec||0)/30);
-  const cost = (p, s) => { const r = st[p.id];
+  const cost = (p, s) => {
     const past = season && season.posAvg[p.id] ? (season.posAvg[p.id][s.pos] || 0) : 0;   /* avg per past game */
-    return [eligible(p, s.band) ? 0 : 1, s.band === "GK" ? 1 : 0, fresh ? q((r.pos[s.pos]||0) + past) : q(r[s.band]), fresh ? q(r[s.band]) : 0]; };
+    return [eligible(p, s.band) ? 0 : 1, (s.band === "GK" && !rotateKeeper) ? 1 : 0,
+            fresh ? q(inPos(p.id, s.pos) + past) : q(inBand(p.id, s.band)), fresh ? q(inBand(p.id, s.band)) : 0]; };
   const better = (a, b) => { for(let k=0;k<a.length;k++) if(a[k] !== b[k]) return a[k] < b[k]; return false; };
   const incoming = squad.filter(p => !spot[p.id]);
   while(incoming.length && free.length){
@@ -1099,7 +1136,7 @@ function autoFillNext(){
       if(ba === bb) continue;
       if(!eligible(a,bb) || !eligible(b,ba)) continue;
       /* gain = how much more balanced both players get by trading places */
-      const gain = (st[a.id][ba] - st[a.id][bb]) + (st[b.id][bb] - st[b.id][ba]);
+      const gain = (inBand(a.id, ba) - inBand(a.id, bb)) + (inBand(b.id, bb) - inBand(b.id, ba));
       if(gain > 120 && (!best || gain > best.gain)) best = {a, b, gain};
     }
     if(!best) break;
@@ -2466,7 +2503,7 @@ function renderHelp(){
       q("How do I move players around?",
         "Every spot on the field is a specific position — left D, sweeper, striker and so on. Tap a player, then tap exactly where they should go: another player to trade spots, or an open position. You will be asked to confirm.<br><br>Or press and hold a player and drag them onto the spot. Dragging takes effect straight away, with no confirmation.")+
       q("Who picks the next shift?",
-        "The app keeps one ready for you, built around who has played least. Everyone already on the field stays in the position they are standing in unless swapping ends evens out their time.<br><br>Players coming on go to the open positions they have spent the least time in, so over a game kids try spots they haven't played. Turn off <b>Try new positions</b> on Setup to even out only defense, midfield and attack.<br><br>Change anything you like on the Next tab before you send it.")+
+        "The app keeps one ready for you, built around who will have played least by the end of the current shift, so even at kickoff the plan brings on the bench. The goalie changes each shift too; turn off <b>Switch goalie each shift</b> on Setup to keep your keeper in goal. Everyone already on the field stays in the position they are standing in unless swapping ends evens out their time.<br><br>Players coming on go to the open positions they have spent the least time in, so over a game kids try spots they haven't played. Turn off <b>Try new positions</b> on Setup to even out only defense, midfield and attack.<br><br>Change anything you like on the Next tab before you send it.")+
       q("What does a faded player mean?",
         "On the <b>Next</b> tab, faded means they are holding that spot. Leave a spot alone and nobody there changes — so you can swap two players and leave the rest of the team alone.")+
       q("Before the game starts",
@@ -2510,7 +2547,7 @@ function renderSetup(){
         : '<div class="muted" style="margin-bottom:8px">This browser can\'t vibrate (iPhones don\'t allow it from web pages), so vibration options are hidden.</div>')+
       toggleRow("s-pause","Paused-clock reminder",s.pauseReminder!==false)+
       '<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button></div></div>'+
-    '<div class="card"><h2>How subs are picked</h2>'+toggleRow("s-auto","Keep next shift ready",s.autoPlan!==false)+toggleRow("s-rot","Swap defense and attack",s.rotate)+
+    '<div class="card"><h2>How subs are picked</h2>'+toggleRow("s-auto","Keep next shift ready",s.autoPlan!==false)+toggleRow("s-keeper","Switch goalie each shift",s.rotateKeeper!==false)+toggleRow("s-rot","Swap defense and attack",s.rotate)+
       toggleRow("s-fresh","Try new positions",s.freshPositions!==false)+toggleRow("s-seasonbal","Balance past games",!!s.seasonBalance)+switchField(s.maxSwitch)+
       '<div class="adv-only">'+toggleRow("s-gk","Suggest next goalie",!!s.goalieRotation)+toggleRow("s-yc","Yellow card sin bin",!!s.ycSinBin)+'</div>'+
       '<div class="muted">How it works explains each of these.</div></div>'+
@@ -2545,7 +2582,7 @@ function renderSetup(){
   document.getElementById("s-form").addEventListener("change", e => { S.settings.formationIdx = parseInt(e.target.value); save(); render(); });
   bindNum("s-periods", v => S.settings.periods = v); bindNum("s-plen", v => S.settings.periodLen = v); bindNum("s-slen", v => { S.settings.shiftLen = v; S.game.warned=false; S.game.alerted=false; }); bindNum("s-warn", v => S.settings.warnLead = v); bindNum("s-min", v => S.settings.minStint = v); bindNum("s-stale", v => S.settings.staleWarn = v); bindNum("s-sin", v => S.settings.sinBinMins = v);
   document.getElementById("s-switch").addEventListener("change", e => { S.settings.maxSwitch = e.target.value === "" ? null : parseInt(e.target.value); save(); });
-  bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-dragbuzz", v => S.settings.dragBuzz = v); bindTog("s-pause", v => S.settings.pauseReminder = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-fresh", v => S.settings.freshPositions = v); bindTog("s-seasonbal", v => S.settings.seasonBalance = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-gk", v => S.settings.goalieRotation = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
+  bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-dragbuzz", v => S.settings.dragBuzz = v); bindTog("s-pause", v => S.settings.pauseReminder = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-keeper", v => S.settings.rotateKeeper = v); bindTog("s-fresh", v => S.settings.freshPositions = v); bindTog("s-seasonbal", v => S.settings.seasonBalance = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-gk", v => S.settings.goalieRotation = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
   document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
   document.getElementById("s-help").addEventListener("click", ()=>openView("help"));
   document.getElementById("s-help-top").addEventListener("click", ()=>openView("help"));
