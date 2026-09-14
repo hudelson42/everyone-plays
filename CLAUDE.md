@@ -121,6 +121,17 @@ in-memory, in that order. Opened from `file://` or a `content://` download,
 browser storage is often unavailable — that's why hosting matters, and why
 Setup shows a warning banner when `storageMode === "memory"`.
 
+**Teams.** A coach can have several teams. Each team is a complete `S` under
+its own storage key; the first team keeps the original key
+(`sideline-tracker-v1`), so saves from before teams load unchanged. The index
+(`sideline-teams-v1`, the `TEAMS` object) lists the teams, which one is open,
+and the settings in `SHARED` (sun, sound, vibrate, dragBuzz), which belong to
+the phone rather than a team. Nothing outside the teams section should know
+teams exist — keep it that way. Switching pauses a running clock first, since
+only the open team's clock can move. Always load state through `hydrate()`.
+Backups hold every team; an old single-team backup is added as a new team,
+never swapped in. The ~5 MB quota is shared by all teams.
+
 Photos are 128×128 JPEG at q=0.72, roughly 5 KB each. The archive keeps full
 event logs for the 3 most recent games only, capped at 12 games, because logs
 plus base64 photos will otherwise approach the ~5 MB localStorage ceiling.

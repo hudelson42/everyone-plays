@@ -385,6 +385,109 @@ def main():
         check("a running clock is paused on load", pg.evaluate("S.game.running") is False)
         check("self-check passes after reload", pg.evaluate(SELF_CHECK))
 
+        # ---------------------------------------------------------------
+        section("Teams")
+        pg.evaluate("""() => { localStorage.clear();
+          localStorage.setItem(KEY, JSON.stringify({ roster: [{ id: 'x1', name: 'Old Timer', number: '9',
+            photo: null, avail: 'available' }], settings: { teamSize: 9, sound: true },
+            game: newGame(), archive: [], lineups: [] })); }""")
+        pg.reload()
+        pg.wait_for_timeout(700)
+        mig = pg.evaluate("""(() => ({ teams: TEAMS.list.length, name: activeTeam().name,
+          player: S.roster.length ? S.roster[0].name : null, size: S.settings.teamSize,
+          sound: S.settings.sound }))()""")
+        check("a save from before teams becomes the first team",
+              mig["teams"] == 1 and mig["name"] == "My team" and mig["player"] == "Old Timer"
+              and mig["size"] == 9, str(mig))
+        check("its sound setting carries over", mig["sound"] is True)
+
+        sep = pg.evaluate("""async () => {
+          const first = TEAMS.active;
+          await addTeam('U10 Blue');
+          const fresh = S.roster.length;
+          S.roster.push({ id: 'b1', name: 'Bea', number: '4', photo: null, avail: 'available', elig: newElig() });
+          S.settings.teamSize = 5; S.settings.sound = false;
+          await Store.save(S);
+          const second = TEAMS.active;
+          await switchTeam(first);
+          const a = { name: S.roster[0].name, size: S.settings.teamSize, sound: S.settings.sound };
+          await switchTeam(second);
+          const b = { name: S.roster[0].name, size: S.settings.teamSize };
+          return { fresh, a, b }; }""")
+        check("a new team starts empty", sep["fresh"] == 0)
+        check("each team keeps its own roster and settings",
+              sep["a"]["name"] == "Old Timer" and sep["a"]["size"] == 9
+              and sep["b"]["name"] == "Bea" and sep["b"]["size"] == 5, f"{sep['a']} / {sep['b']}")
+        check("sound is shared by every team", sep["a"]["sound"] is False)
+
+        pg.evaluate("""() => { S.game.running = true; S.game.startedAt = Date.now() - 60000; S.game.base = 0;
+          switchTeam(TEAMS.list[0].id); }""")
+        pg.wait_for_timeout(200)
+        asked = pg.evaluate("document.getElementById('modalwrap').classList.contains('show')")
+        pg.click("#modalok")
+        pg.wait_for_timeout(400)
+        paused = pg.evaluate("""async () => { const now = activeTeam().name;
+          await switchTeam(TEAMS.list[1].id);
+          return { now, running: S.game.running, base: Math.round(S.game.base) }; }""")
+        check("switching mid-game asks first", asked)
+        check("switching pauses the clock and keeps its time",
+              paused["now"] == "My team" and paused["running"] is False and paused["base"] >= 59, str(paused))
+
+        pg.reload()
+        pg.wait_for_timeout(700)
+        kept = pg.evaluate("({ teams: TEAMS.list.length, name: activeTeam().name, player: S.roster[0] && S.roster[0].name })")
+        check("teams survive a reload",
+              kept["teams"] == 2 and kept["name"] == "U10 Blue" and kept["player"] == "Bea", str(kept))
+
+        pg.click('#tabs button[data-tab="roster"]')
+        pg.wait_for_timeout(150)
+        pg.click("#r-team")
+        pg.wait_for_timeout(150)
+        listed = pg.evaluate("document.querySelectorAll('#modalbody [data-team]').length")
+        check("the team list shows every team", listed == 2, f"{listed} listed")
+        pg.click("#modalcancel")
+        pg.set_viewport_size({"width": 360, "height": 800})
+        wide = []
+        for tab in ("field", "roster", "setup"):
+            pg.click(f'#tabs button[data-tab="{tab}"]')
+            pg.wait_for_timeout(120)
+            if pg.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth"):
+                wide.append(tab)
+        check("team controls fit at 360 px", not wide, ", ".join(wide))
+        pg.set_viewport_size({"width": 390, "height": 844})
+
+        rt = pg.evaluate("""async () => {
+          const text = await buildBackup();
+          await eraseAllTeams();
+          const wiped = TEAMS.list.length + ':' + S.roster.length;
+          loadBackup(text);
+          await new Promise(r => setTimeout(r, 300));
+          const names = TEAMS.list.map(t => t.name);
+          const active = activeTeam().name, player = S.roster[0] && S.roster[0].name;
+          await switchTeam(TEAMS.list[0].id);
+          return { wiped, names, active, player, other: S.roster[0] && S.roster[0].name }; }""")
+        check("erasing all teams leaves one empty team", rt["wiped"] == "1:0", rt["wiped"])
+        check("a backup restores every team",
+              rt["names"] == ["My team", "U10 Blue"] and rt["active"] == "U10 Blue"
+              and rt["player"] == "Bea" and rt["other"] == "Old Timer", str(rt))
+
+        old = pg.evaluate("""async () => {
+          loadBackup(JSON.stringify({ roster: [{ id: 'z1', name: 'Zed', number: '1', photo: null, avail: 'available' }],
+            settings: { teamSize: 6 }, game: newGame() }));
+          await new Promise(r => setTimeout(r, 300));
+          return { teams: TEAMS.list.length, name: activeTeam().name, player: S.roster[0].name,
+                   size: S.settings.teamSize }; }""")
+        check("a backup from before teams is added, not swapped in",
+              old["teams"] == 3 and old["player"] == "Zed" and old["size"] == 6, str(old))
+
+        gone = pg.evaluate("""async () => {
+          const t = activeTeam(); await deleteTeam(t.id);
+          return { teams: TEAMS.list.length, cleared: localStorage.getItem(t.key) === null,
+                   now: activeTeam().name, ok: selfCheck().indexOf('FAIL') === -1 }; }""")
+        check("deleting a team removes its data and opens another",
+              gone["teams"] == 2 and gone["cleared"] and gone["now"] != "Imported team", str(gone))
+        check("self-check passes with several teams", gone["ok"])
+
         browser.close()
 
     # -------------------------------------------------------------------

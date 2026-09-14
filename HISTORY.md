@@ -117,6 +117,17 @@ No accounts, no sync, no analytics. Partly a feature, partly risk management:
 the moment children's names and photos land on a server, COPPA and state
 privacy law apply. Keeping everything local avoids that entirely.
 
+### Multiple teams
+
+Added 2026-09-14, because some coaches run more than one team. Each team is a
+whole state object under its own storage key, so the tracking code never
+learned about teams. Game format, formation, timing and rotation settings are
+per team, since an under-8 and an under-12 side play differently. Sun mode,
+sound and vibration are shared because they're about the phone. Two clocks
+can't run at once, so switching pauses the open one after asking. A child on
+two teams is two separate roster entries; linking them wasn't worth the
+complexity.
+
 ### No icons
 
 Words, or standard box-score letters — G, A, SOG, YC. An emoji-based pass was
@@ -146,7 +157,20 @@ listed. An earlier version enumerated every on/off and was correct but unusable.
 
 ## Data schema
 
-All state lives in one object, `S`, serialized to storage as JSON.
+The open team's state lives in one object, `S`, serialized to storage as JSON.
+Each team has its own copy under its own key, listed in a small index:
+
+```
+TEAMS = {                  // stored under "sideline-teams-v1"
+  v: 1,
+  active: "t1",
+  list:   [{ id, name, key, players, bytes }],   // first team's key is "sideline-tracker-v1"
+  shared: { sun, sound, vibrate, dragBuzz }      // applied to every team on load
+}
+
+Backup = { sideline: "backup", v: 2, at, active,   // active is an index into teams
+           shared, teams: [{ name, data: S }] }
+```
 
 ```
 S = {

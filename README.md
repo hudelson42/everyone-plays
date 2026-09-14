@@ -33,6 +33,8 @@ head while nine kids ask you when they're going on.
   they drop out of the rotation.
 - **A record afterwards.** Minutes per position per player, exportable as CSV
   for the parent emails.
+- **More than one team.** Each team keeps its own roster, settings, minutes and
+  history. Tap the team name on the Roster tab to switch.
 
 Optional Advanced mode adds formations, goals, assists, shots, cards, opponent
 scoring and season totals. Leave it off and the app stays simple.
@@ -44,8 +46,8 @@ browser's storage on your own device. Nothing about any child leaves the phone
 it was typed into.
 
 The flip side is that clearing your browser data will erase your roster. Use
-**Setup → Save backup file** before a big day. That file is the only copy that
-survives.
+**Setup → Save backup file** before a big day. It includes every team, and it's
+the only copy that survives.
 
 ## Getting started
 

@@ -205,6 +205,10 @@ body.sun .startrow>b:first-child{color:#fff}
 .lulist button{display:flex;align-items:center;gap:10px;width:100%;padding:10px;margin-bottom:6px;
   border:1px solid var(--line);border-radius:var(--r);background:var(--panel2);min-height:var(--tap);text-align:left}
 .lulist b{flex:1;font-size:14px}
+.teambar{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;margin-bottom:10px;min-height:var(--tap);
+  border:1px solid var(--line);border-radius:var(--r);background:var(--panel);text-align:left;font:inherit;color:inherit}
+.teambar b{flex:1;min-width:0;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.teambar .muted{flex:none}
 .helpq{font-size:15px;font-weight:700;margin:16px 0 5px}
 .helpq:first-child{margin-top:0}
 .helpa{font-size:14px;line-height:1.45;color:var(--ink-dim)}
@@ -378,24 +382,40 @@ function posCodes(band, n){
 function posName(code){ return !code ? "" : POSNAME[code] || (BANDNAME[code.replace(/\d+$/,"")] || code) + " " + code.replace(/^\D+/,""); }
 function slotPos(band, i){ return posCodes(band, slotsFor(band))[i] || null; }
 
-const KEY = "sideline-tracker-v1";
+const KEY = "sideline-tracker-v1";     /* the first team's data, where the app has always kept it */
+const INDEX_KEY = "sideline-teams-v1";
+/* sun mode, sound and vibration belong to the phone and the coach, not to a team */
+const SHARED = ["sun","sound","vibrate","dragBuzz"];
+let TEAMS = freshTeams();               /* {v, active, list:[{id, name, key, players, bytes}], shared} */
 let storageMode = "memory";
+const memStore = {};                    /* last resort, so switching teams still works when storage is blocked */
 const Store = {
-  async load(){
+  async get(k){
     if(window.storage && window.storage.get){
-      try{ const r = await window.storage.get(KEY); storageMode="artifact";
-           if(r && r.value) return JSON.parse(r.value); return null; }
+      try{ const r = await window.storage.get(k); storageMode="artifact"; return r && r.value ? r.value : null; }
       catch(e){ storageMode="artifact"; return null; }
     }
-    try{ const s = localStorage.getItem(KEY); storageMode="local"; return s?JSON.parse(s):null; }
-    catch(e){ storageMode="memory"; return null; }
+    try{ const s = localStorage.getItem(k); storageMode="local"; return s; }
+    catch(e){ storageMode="memory"; return memStore[k] || null; }
   },
-  async save(obj){
-    const s = JSON.stringify(obj);
+  async set(k, s){
+    memStore[k] = s;
     if(window.storage && window.storage.set){
-      try{ await window.storage.set(KEY, s); storageMode="artifact"; return; }catch(e){}
+      try{ await window.storage.set(k, s); storageMode="artifact"; return; }catch(e){}
     }
-    try{ localStorage.setItem(KEY, s); storageMode="local"; return; }catch(e){ storageMode="memory"; }
+    try{ localStorage.setItem(k, s); storageMode="local"; }catch(e){ storageMode="memory"; }
+  },
+  async remove(k){
+    delete memStore[k];
+    if(window.storage && window.storage.delete){ try{ await window.storage.delete(k); }catch(e){} }
+    try{ localStorage.removeItem(k); }catch(e){}
+  },
+  /* saves the open team, and the index with its player count and size */
+  async save(obj){
+    const t = activeTeam(), s = JSON.stringify(obj);
+    t.players = obj.roster.length; t.bytes = s.length;
+    SHARED.forEach(k => { if(obj.settings[k] !== undefined) TEAMS.shared[k] = obj.settings[k]; });
+    await this.set(t.key, s); await this.set(INDEX_KEY, JSON.stringify(TEAMS));
   }
 };
 
@@ -413,10 +433,144 @@ function newGame(){
   return { log:[], seq:0, shift:1, period:1, running:false, startedAt:null, base:0,
            priorTotal:0, periodOver:false, shiftStart:0, warned:false, alerted:false, adj:{}, next:null };
 }
+/* Turn whatever came out of storage or a backup into a complete state object: settings added
+   since it was saved get their defaults, and the phone-level settings come from the index. */
+function hydrate(saved){
+  const s = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), saved || {});
+  s.settings = Object.assign({}, DEFAULTS.settings, (saved && saved.settings) || {}, TEAMS.shared);
+  s.game = Object.assign(newGame(), (saved && saved.game) || {}); s.game.adj = s.game.adj || {};
+  if(!Array.isArray(s.roster)) s.roster = [];
+  s.roster.forEach(p => { if(!p.elig) p.elig = newElig(); });
+  if(!s.lineups) s.lineups = []; if(!s.archive) s.archive = [];
+  if(!s.game.shift) s.game.shift = 1; s.game.log.forEach(e => { if(!e.sh) e.sh = 1; if(!e.eid) e.eid = uid(); });
+  if(s.game.running){ s.game.base = Math.min(s.game.base, s.settings.periodLen*60); s.game.running = false; s.game.startedAt = null; }
+  return s;
+}
 let S = JSON.parse(JSON.stringify(DEFAULTS));
 
 let saveTimer=null;
 function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>Store.save(S),400); }
+
+/* ---------------- teams ---------------- */
+/* Each team is a whole S — roster, settings, game, archive, lineups — under its own storage
+   key, so nothing outside this section needs to know teams exist. */
+function freshTeams(){ return {v:1, active:"t1", list:[{id:"t1", name:"My team", key:KEY, players:0, bytes:0}], shared:{}}; }
+function activeTeam(){ return TEAMS.list.find(t => t.id === TEAMS.active) || TEAMS.list[0]; }
+function newTeamId(){ return "t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function saveIndex(){ return Store.set(INDEX_KEY, JSON.stringify(TEAMS)); }
+async function readTeam(t){
+  try{ const raw = await Store.get(t.key), o = raw ? JSON.parse(raw) : null; return o && o.roster ? o : null; }
+  catch(e){ return null; }
+}
+async function initTeams(){
+  let idx = null;
+  try{ const raw = await Store.get(INDEX_KEY); idx = raw ? JSON.parse(raw) : null; }catch(e){ idx = null; }
+  TEAMS = (idx && idx.list && idx.list.length) ? Object.assign({v:1, shared:{}}, idx) : freshTeams();
+  TEAMS.active = activeTeam().id;
+  const saved = await readTeam(activeTeam());
+  /* first run since teams arrived: the old save is already "My team", and its phone-level
+     settings become the shared ones */
+  if(!idx && saved && saved.settings) SHARED.forEach(k => { if(saved.settings[k] !== undefined) TEAMS.shared[k] = saved.settings[k]; });
+  S = hydrate(saved);
+}
+function resetView(){
+  selected = null; nextSel = null; openPlayer = null; openShifts = {}; checkIn = null; _binWatch = {};
+  document.body.classList.toggle("sun", !!S.settings.sun); document.body.classList.toggle("adv", !!S.settings.advanced);
+}
+/* Two clocks can't run at once — the clock only moves on the screen you're looking at —
+   so leaving a team banks its time and stops it. */
+function pauseClock(){ if(S.game.running){ S.game.base = periodElapsed(); S.game.running = false; S.game.startedAt = null; wake(false); } }
+async function openTeam(id, msg){
+  pauseClock(); clearTimeout(saveTimer); await Store.save(S);
+  TEAMS.active = id;
+  S = hydrate(await readTeam(activeTeam()));
+  await saveIndex();
+  resetView(); invalidate(); render(); toast(msg || "Switched to "+activeTeam().name);
+}
+function switchTeam(id, msg){
+  if(id === TEAMS.active || !TEAMS.list.some(t => t.id === id)) return Promise.resolve();
+  if(!S.game.running) return openTeam(id, msg);
+  modal("Switch teams?", '<div style="font-size:15px">The clock is running for <b>'+esc(activeTeam().name)+'</b>. Switching pauses it, and minutes stop until you come back and start it again.</div>',
+    "Pause and switch", ()=>{ openTeam(id, msg); });
+  return Promise.resolve();
+}
+async function addTeam(name, data){
+  const id = newTeamId(), t = {id, name:String(name||"").trim().slice(0,40) || "Team "+(TEAMS.list.length+1), key:"sideline-team-"+id, players:0, bytes:0};
+  TEAMS.list.push(t);
+  if(data){ const s = JSON.stringify(hydrate(data)); t.players = data.roster.length; t.bytes = s.length; await Store.set(t.key, s); }
+  await saveIndex();
+  await switchTeam(id, data ? "Added as a new team: "+t.name : "Added "+t.name);
+}
+function renameTeam(id, name){
+  const t = TEAMS.list.find(x => x.id === id); if(!t) return;
+  t.name = String(name).trim().slice(0,40) || t.name; saveIndex(); render(); toast("Renamed to "+t.name);
+}
+async function deleteTeam(id){
+  const t = TEAMS.list.find(x => x.id === id);
+  if(!t || TEAMS.list.length < 2) return;
+  if(id === TEAMS.active){
+    pauseClock(); clearTimeout(saveTimer);   /* don't write back the team being deleted */
+    TEAMS.active = TEAMS.list.find(x => x.id !== id).id;
+    S = hydrate(await readTeam(activeTeam()));
+    resetView();
+  }
+  TEAMS.list = TEAMS.list.filter(x => x.id !== id);
+  await Store.remove(t.key); await saveIndex();
+  invalidate(); render(); toast("Deleted "+t.name);
+}
+async function eraseAllTeams(){
+  pauseClock(); clearTimeout(saveTimer);
+  for(const t of TEAMS.list) await Store.remove(t.key);
+  await Store.remove(INDEX_KEY);
+  TEAMS = freshTeams(); S = hydrate(null);
+  resetView(); invalidate(); render(); toast("Erased");
+}
+/* one file with every team — the open one from memory, the rest from storage */
+async function buildBackup(){
+  const teams = [];
+  for(const t of TEAMS.list) teams.push({name:t.name, data: t.id === TEAMS.active ? S : await readTeam(t)});
+  return JSON.stringify({sideline:"backup", v:2, at:Date.now(), active:TEAMS.list.indexOf(activeTeam()), shared:TEAMS.shared, teams});
+}
+async function restoreTeams(o){
+  pauseClock(); clearTimeout(saveTimer);
+  for(const t of TEAMS.list) await Store.remove(t.key);
+  TEAMS = {v:1, active:"t1", list:[], shared:Object.assign({}, o.shared || {})};
+  for(let i=0;i<o.teams.length;i++){
+    const src = o.teams[i] || {}, id = i === 0 ? "t1" : newTeamId();
+    const t = {id, name:String(src.name || "Team "+(i+1)).slice(0,40), key: i === 0 ? KEY : "sideline-team-"+id};
+    const data = hydrate(src.data && src.data.roster ? src.data : null), s = JSON.stringify(data);
+    t.players = data.roster.length; t.bytes = s.length;
+    TEAMS.list.push(t); await Store.set(t.key, s);
+  }
+  TEAMS.active = (TEAMS.list[o.active] || TEAMS.list[0]).id;
+  await saveIndex();
+  S = hydrate(await readTeam(activeTeam()));
+  resetView(); invalidate(); render(); toast("Loaded "+TEAMS.list.length+(TEAMS.list.length === 1 ? " team" : " teams"));
+}
+function teamBar(id, always){
+  if(!always && TEAMS.list.length < 2) return "";
+  return '<button class="teambar" id="'+id+'"><span class="muted">Team</span><b>'+esc(activeTeam().name)+'</b>'+
+    '<span class="muted">'+(TEAMS.list.length > 1 ? "Switch" : "Add a team")+' ▸</span></button>';
+}
+function openTeams(){
+  const body = '<div class="lulist">'+TEAMS.list.map(t => {
+      const cur = t.id === TEAMS.active, n = cur ? S.roster.length : (t.players || 0);
+      return '<button data-team="'+t.id+'"'+(cur ? ' style="border-color:var(--on)"' : '')+'><b>'+esc(t.name)+'</b>'+
+        '<span class="muted">'+n+(n === 1 ? ' player' : ' players')+'</span>'+
+        '<span class="muted" style="flex:none">'+(cur ? "Open" : "Switch")+'</span></button>';
+    }).join("")+'</div>'+
+    '<div class="muted" style="margin:6px 0 4px">Add a team</div>'+
+    '<input type="text" id="team-new" maxlength="40" placeholder="U10 Blue, Saturday rec…">'+
+    '<div class="muted" style="margin-top:8px">Each team has its own roster, settings, minutes and history. Rename or delete teams on Setup.</div>';
+  modal("Teams", body, "Add team", ()=>{
+    const v = (document.getElementById("team-new").value || "").trim();
+    if(!v){ toast("Type a name for the new team"); return false; }
+    addTeam(v);
+  }, "Close");
+  document.querySelectorAll("#modalbody [data-team]").forEach(el => el.addEventListener("click", ()=>{
+    const id = el.dataset.team; closeModal(); switchTeam(id);
+  }));
+}
 
 /* ---------------- clock ---------------- */
 function periodElapsed(){
@@ -1103,7 +1257,7 @@ function renderField(){
 
   if(!S.roster.length){
     document.getElementById("v-field").innerHTML =
-      '<div class="card"><h2>Let\'s get you set up</h2>'+
+      teamBar("f-team")+'<div class="card"><h2>Let\'s get you set up</h2>'+
       '<div class="startrow"><b>1</b><div>Add your players on the <b>Roster</b> tab — a name and a number is enough.</div></div>'+
       '<div class="startrow"><b>2</b><div>Pick your game format on the <b>Setup</b> tab. It comes set to 7 v 7.</div></div>'+
       '<div class="startrow"><b>3</b><div>Come back here, tap an open spot, then tap the player who goes there.</div></div>'+
@@ -1111,11 +1265,12 @@ function renderField(){
       '<button class="btn ghost" id="go-help">How it works</button></div></div>';
     document.getElementById("go-roster").addEventListener("click", ()=>{ activeTab="roster"; render(); });
     document.getElementById("go-help").addEventListener("click", ()=>{ activeTab="help"; render(); });
+    const ft0 = document.getElementById("f-team"); if(ft0) ft0.addEventListener("click", openTeams);
     return;
   }
 
   document.getElementById("v-field").innerHTML =
-    banner + preBar + upStrip + pitch + '<div class="row" style="margin-bottom:10px"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div><h3>Bench</h3>' + benchHTML +
+    teamBar("f-team") + banner + preBar + upStrip + pitch + '<div class="row" style="margin-bottom:10px"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div><h3>Bench</h3>' + benchHTML +
     (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap an open spot then a player, tap a player then a spot, or tap two players to swap them. Press and hold to drag instead. Changes here count as mid-shift swaps.</div>');
 
   document.querySelectorAll("#v-field [data-chip]").forEach(el => {
@@ -1145,6 +1300,7 @@ function renderField(){
     }));
   }
 
+  const ft = document.getElementById("f-team"); if(ft) ft.addEventListener("click", openTeams);
   const ci = document.getElementById("f-checkin"); if(ci) ci.addEventListener("click", openCheckIn);
   const fl = document.getElementById("f-lineup"); if(fl) fl.addEventListener("click", openLineups);
   const goNext = document.getElementById("plan-next"); if(goNext) goNext.addEventListener("click", ()=>{ activeTab = "next"; render(); });
@@ -1587,16 +1743,13 @@ async function shareFile(name, text, mime, title){
   try{ const file = new File([text], name, {type:mime}); if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title}); return; } await navigator.share({title, text}); }
   catch(e){ if(e && e.name === "AbortError") return; toast("Sharing isn't available here"); }
 }
+/* A backup of all teams replaces everything. One from before teams existed is added as a new
+   team, so restoring an old file never wipes out the teams already on the phone. */
 function loadBackup(text){
   let o; try{ o = JSON.parse(text); }catch(e){ toast("That file isn't a backup"); return false; }
+  if(o && Array.isArray(o.teams) && o.teams.length){ closeModal(); restoreTeams(o); return true; }
   if(!o || !o.roster || !o.settings){ toast("That file isn't a backup"); return false; }
-  S = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), o);
-  if(!S.game) S.game = newGame(); S.game.adj = S.game.adj || {};
-  if(!S.game.shift) S.game.shift = 1; S.game.log.forEach(e => { if(!e.sh) e.sh = 1; if(!e.eid) e.eid=uid(); });
-  S.roster.forEach(p => { if(!p.elig) p.elig = newElig(); });
-  S.game.running = false; S.game.startedAt = null;
-  document.body.classList.toggle("sun", !!S.settings.sun); document.body.classList.toggle("adv", !!S.settings.advanced);
-  closeModal(); save(); render(); toast("Loaded "+S.roster.length+" players"); return true;
+  closeModal(); addTeam("Imported team", o); return true;
 }
 function copyOut(text){
   modal("Copy and paste", '<textarea id="outbox" readonly>'+esc(text)+'</textarea>', "Copy", ()=>{
@@ -1794,9 +1947,11 @@ function renderRoster(){
   }).join("") : '<div class="card">No players yet. Type a name and number above to add your first one.</div>';
 
   document.getElementById("v-roster").innerHTML =
+    teamBar("r-team", true)+
     (S.roster.length ? '<div class="row" style="margin-bottom:10px"><button class="btn" id="r-checkin">Who is here today?</button></div>' : '')+
     '<div class="addrow"><input class="n" type="text" id="a-name" placeholder="Player name" value="'+esc(addName)+'"><input class="j" type="text" inputmode="numeric" id="a-num" placeholder="#" value="'+esc(addNum)+'"><button class="btn primary" id="a-go">Add</button></div><div class="plist">'+list+'</div>'+(S.roster.length ? '<div class="muted" style="margin-top:10px">'+S.roster.length+' players · '+S.roster.filter(available).length+' available · '+S.settings.teamSize+' on the field. Tap a player to set positions, availability and a photo.</div>' : "")+'<input type="file" accept="image/*" capture="user" id="file-cam" style="display:none"><input type="file" accept="image/*" id="file-lib" style="display:none">';
 
+  document.getElementById("r-team").addEventListener("click", openTeams);
   const rci = document.getElementById("r-checkin"); if(rci) rci.addEventListener("click", openCheckIn);
   const nameEl = document.getElementById("a-name"), numEl = document.getElementById("a-num");
   nameEl.addEventListener("input", ()=>{ addName = nameEl.value; }); numEl.addEventListener("input", ()=>{ addNum = numEl.value; });
@@ -1884,6 +2039,8 @@ function renderHelp(){
         "The <b>Minutes</b> tab is the record. Each cell shows time played, and underneath it how many times they went into that spot. Goalie minutes count toward a player's total. Tap a name to see time in each specific position.<br><br>Tap any time to correct it if something got logged wrong.")+
       q("I made a mistake.",
         "<b>Undo last</b> on the Field tab reverses the last change. On <b>History</b> you can delete a goal, card or note — substitutions cannot be deleted there, because the minute totals depend on them. Fix those by substituting again.")+
+      q("I coach more than one team.",
+        "Tap the team name at the top of the <b>Roster</b> tab to add a team or switch between them. Every team has its own roster, settings, minutes, history and saved lineups. If a clock is running you will be asked first, because switching pauses it.<br><br>Rename or delete teams on <b>Setup</b>. The backup file there includes every team.")+
       q("Will I lose everything if I close the tab?",
         "Your roster, settings and the game in progress save automatically. Before a big day, use <b>Save backup file</b> on the Setup tab — that is your insurance against a cleared cache or a new phone.")+
       q("Can I put this on my home screen?",
@@ -1896,17 +2053,33 @@ function renderHelp(){
 function renderSetup(){
   const s = S.settings, list = FORMATIONS[s.teamSize] || FORMATIONS[7], sizes = [4,5,6,7,8,9,10,11];
   document.getElementById("v-setup").innerHTML =
+    '<div class="card"><h2>Teams</h2><div class="muted" style="margin-bottom:8px">This is <b>'+esc(activeTeam().name)+'</b>'+(TEAMS.list.length > 1 ? ', one of '+TEAMS.list.length+' teams' : '')+'. Each team keeps its own roster, settings, minutes and history. Sun mode, sound and vibration are the same for every team.</div><div class="row"><button class="btn" id="t-switch">'+(TEAMS.list.length > 1 ? "Switch or add" : "Add a team")+'</button><button class="btn ghost" id="t-rename">Rename</button></div>'+(TEAMS.list.length > 1 ? '<button class="btn warn wide" id="t-delete" style="margin-top:8px">Delete this team</button>' : '')+'</div>'+
     '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b><div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
     '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
     '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
     '<div class="card"><h2>Alerts and display</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz when you press and hold a player",s.dragBuzz!==false)+toggleRow("s-confirm","Confirm changes made by tapping",s.confirmChanges!==false)+toggleRow("s-auto","Keep the next shift ready automatically",s.autoPlan!==false)+toggleRow("s-rot","Rotate players between defense and attack",s.rotate)+toggleRow("s-fresh","Put subs in positions they haven't played",s.freshPositions!==false)+switchField(s.maxSwitch)+'<div class="adv-only">'+toggleRow("s-yc","Yellow card sends the player to a sin bin",!!s.ycSinBin)+'</div>'+toggleRow("s-sun","Sun mode — maximum contrast",s.sun)+'<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
-    '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
+    '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone, and includes every team.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
     '<div class="card"><h2>About this app</h2><div class="muted" style="line-height:1.5">'+
       'Sideline tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
       'Everything is worked out from a log of substitutions, so the minutes are always consistent with what actually happened. Nothing leaves your phone and nothing needs a signal — it works in airplane mode.<br><br>'+
       'A few things worth knowing: goalie minutes count toward a player\'s total; an empty spot in a planned shift means whoever is there now stays; and the backup file on this page is the only copy that survives clearing your browser data.'+
     '</div><div class="row" style="margin-top:10px"><button class="btn ghost" id="s-help">Open Help</button></div></div>';
 
+  document.getElementById("t-switch").addEventListener("click", openTeams);
+  document.getElementById("t-rename").addEventListener("click", ()=>{
+    const t = activeTeam();
+    modal("Rename team", '<input type="text" id="team-name" maxlength="40" value="'+esc(t.name)+'">', "Save", ()=>{
+      const v = (document.getElementById("team-name").value || "").trim();
+      if(!v){ toast("Type a name"); return false; }
+      renameTeam(t.id, v);
+    });
+    setTimeout(()=>{ const el = document.getElementById("team-name"); if(el){ el.focus(); el.select(); } }, 60);
+  });
+  const td = document.getElementById("t-delete");
+  if(td) td.addEventListener("click", ()=>{
+    const t = activeTeam();
+    modal("Delete "+t.name+"?", "Its roster, photos, minutes and history all go. Your other teams aren't affected. There's no undo.", "Delete team", ()=>{ deleteTeam(t.id); });
+  });
   document.getElementById("adv-on").addEventListener("click", ()=>{ S.settings.advanced = true; save(); render(); });
   document.getElementById("adv-off").addEventListener("click", ()=>{ S.settings.advanced = false; save(); render(); });
   document.getElementById("s-size").addEventListener("change", e => { S.settings.teamSize = parseInt(e.target.value); S.settings.formationIdx = 0; save(); render(); });
@@ -1917,13 +2090,24 @@ function renderSetup(){
   document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
   document.getElementById("s-help").addEventListener("click", ()=>{ activeTab = "help"; render(); });
   document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));
-  document.getElementById("s-dl").addEventListener("click", ()=>saveFile(backupName(), JSON.stringify(S), "application/json"));
-  const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>shareFile(backupName(), JSON.stringify(S), "application/json", "Sideline backup"));
+  document.getElementById("s-dl").addEventListener("click", ()=>buildBackup().then(text => saveFile(backupName(), text, "application/json")));
+  const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(), text, "application/json", "Sideline backup")));
   const fi = document.getElementById("s-file"); document.getElementById("s-open").addEventListener("click", ()=>fi.click());
   fi.addEventListener("change", ()=>{ const f = fi.files && fi.files[0]; fi.value = ""; if(!f) return; const fr = new FileReader(); fr.onload = () => loadBackup(fr.result); fr.onerror = () => toast("Couldn't read that file"); fr.readAsText(f); });
-  document.getElementById("s-exp").addEventListener("click", ()=>copyOut(JSON.stringify(S)));
-  document.getElementById("s-imp").addEventListener("click", ()=>{ modal("Paste a backup", '<div class="muted" style="margin-bottom:6px">This replaces the roster, settings and current game.</div><textarea id="impbox" placeholder="Paste the backup text here"></textarea>', "Replace everything", ()=>{ if(!loadBackup(document.getElementById("impbox").value)) return false; }); });
-  document.getElementById("s-wipe").addEventListener("click", ()=>{ modal("Erase everything?", "Roster, photos, minutes and history all go. There's no undo.", "Erase", ()=>{ S = JSON.parse(JSON.stringify(DEFAULTS)); S.game = newGame(); document.body.classList.remove("sun"); document.body.classList.remove("adv"); save(); render(); toast("Erased"); }); });
+  document.getElementById("s-exp").addEventListener("click", ()=>buildBackup().then(copyOut));
+  document.getElementById("s-imp").addEventListener("click", ()=>{ modal("Paste a backup", '<div class="muted" style="margin-bottom:6px">A backup of all your teams replaces everything here. A backup from before teams existed is added as a new team.</div><textarea id="impbox" placeholder="Paste the backup text here"></textarea>', "Replace everything", ()=>{ if(!loadBackup(document.getElementById("impbox").value)) return false; }); });
+  document.getElementById("s-wipe").addEventListener("click", ()=>{
+    if(TEAMS.list.length < 2){
+      modal("Erase everything?", "Roster, photos, minutes and history all go. There's no undo.", "Erase", ()=>{ eraseAllTeams(); });
+      return;
+    }
+    modal("Erase what?", '<div style="font-size:15px">Erase just <b>'+esc(activeTeam().name)+'</b>, or every team on this phone? There is no undo.</div>'+
+      '<div class="row" style="margin-top:12px"><button class="btn warn" id="wipe-team">This team</button><button class="btn warn" id="wipe-all">All teams</button></div>', null, null, "Cancel");
+    document.getElementById("wipe-team").addEventListener("click", ()=>{
+      const name = activeTeam().name; closeModal(); pauseClock(); S = hydrate(null); resetView(); save(); render(); toast("Erased "+name);
+    });
+    document.getElementById("wipe-all").addEventListener("click", ()=>{ closeModal(); eraseAllTeams(); });
+  });
 }
 /* Everything on the Minutes tab is derived from the event log, so a bad edit shows up
    as wrong numbers rather than a crash. These are the invariants that must hold. */
@@ -1969,8 +2153,9 @@ function selfCheck(){
   const ghosts = S.game.log.filter(e => e.playerId && !byId(e.playerId)).length;
   ok("No events point at deleted players", !ghosts, ghosts ? ghosts+" orphaned" : "");
 
-  const bytes = JSON.stringify(S).length;
-  ok("Storage has room", bytes < 3500000, Math.round(bytes/1024)+" KB used, roughly 5 MB available");
+  /* every team shares the one browser quota */
+  const bytes = JSON.stringify(S).length + TEAMS.list.reduce((a, t) => a + (t.id === TEAMS.active ? 0 : (t.bytes || 0)), 0);
+  ok("Storage has room", bytes < 3500000, Math.round(bytes/1024)+" KB used"+(TEAMS.list.length > 1 ? " across "+TEAMS.list.length+" teams" : "")+", roughly 5 MB available");
   ok("Saving is working", storageMode !== "memory", storageMode+" storage");
 
   return out.join("");
@@ -2050,14 +2235,7 @@ function registerSW(){
 }
 
 (async function init(){
-  const saved = await Store.load();
-  if(saved && saved.roster){
-    S = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), saved); S.settings = Object.assign({}, DEFAULTS.settings, saved.settings||{}); S.game = Object.assign(newGame(), saved.game||{}); S.game.adj = S.game.adj || {};
-    S.roster.forEach(p => { if(!p.elig) p.elig = newElig(); });
-    if(!S.lineups) S.lineups = [];
-    if(!S.game.shift) S.game.shift = 1; S.game.log.forEach(e => { if(!e.sh) e.sh = 1; if(!e.eid) e.eid = uid(); });
-    if(S.game.running){ S.game.base = Math.min(S.game.base, S.settings.periodLen*60); S.game.running = false; S.game.startedAt = null; }
-  }
+  await initTeams();
   document.body.classList.toggle("sun", !!S.settings.sun); document.body.classList.toggle("adv", !!S.settings.advanced);
   buildTabs(); render(); setInterval(tick, 400); registerSW();
 })();
