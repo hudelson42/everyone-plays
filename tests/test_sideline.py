@@ -338,6 +338,131 @@ def main():
         check("check-in marks absentees", out == 1, f"{out} out")
 
         # ---------------------------------------------------------------
+        section("Games and season")
+        pg.evaluate(SEED, [ROSTER, 7, True])
+        dated = pg.evaluate("""(() => { byId('p12').avail = 'out';
+          startClock(); stopClock(); const d = S.game.date, present = S.game.present.length;
+          byId('p12').avail = 'available'; return { d: !!d, present }; })()""")
+        check("a game's date and attendance are set at kickoff", dated["d"] and dated["present"] == 12, str(dated))
+
+        pg.evaluate("S.archive = []")
+        for i in range(5):
+            pg.evaluate(SEED, [ROSTER, 7, True])
+            pg.evaluate(f"S.game.date = Date.now() - {5 - i} * 7 * 864e5; S.game.opponent = 'Rivals {i}'; "
+                        "S.game.present = S.roster.map(p => p.id);")
+            if i == 2:
+                pg.evaluate("S.game.present = S.roster.filter(p => p.id !== 'p12').map(p => p.id); byId('p12').avail = 'out';")
+            for k in range(1, 6):
+                run_shift(pg, k * 300)
+            if i == 1:
+                pg.evaluate("push([{ type: 'GOAL', playerId: 'p4' }]);")
+            pg.evaluate("S.game.base = 1500; invalidate(); archiveGame();")
+        pg.evaluate("S.game = newGame(); S.roster.forEach(p => p.avail = 'available'); invalidate(); render();")
+
+        season = pg.evaluate("""(() => { const { by, team } = aggregate(seasonGames());
+          const sumGames = S.archive.reduce((a, g) => a + g.players.reduce((x, p) => x + p.total, 0), 0);
+          const sumSeason = Object.values(by).reduce((a, r) => a + r.total, 0);
+          return { games: team.games, logs: S.archive.filter(g => g.log).length, sumGames, sumSeason,
+                   p12: { gp: by.p12.gp, missed: by.p12.missed }, goals: by.p4.goals }; })()""")
+        check("every finished game is filed", season["games"] == 5, f"{season['games']} games")
+        check("full logs are kept for the 3 most recent games only", season["logs"] == 3, f"{season['logs']} logs")
+        check("season minutes add up to the games", abs(season["sumGames"] - season["sumSeason"]) < 1,
+              f"{season['sumSeason']}s vs {season['sumGames']}s")
+        check("a missed game counts as missed, not as zero minutes", season["p12"] == {"gp": 4, "missed": 1}, str(season["p12"]))
+        check("stats count from games whose log was trimmed", season["goals"] == 1, f"{season['goals']} goals")
+
+        opened = pg.evaluate("""(() => { try { S.settings.advanced = true; openPlayer = 'p4'; activeTab = 'roster'; render();
+          return !!document.querySelector('#v-roster .pedit'); } catch (e) { return String(e); } })()""")
+        check("a player opens on Roster with more than 3 past games (used to crash)", opened is True, str(opened))
+        pg.evaluate("openPlayer = null; render();")
+
+        renamed = pg.evaluate("""(() => { byId('p4').name = 'Eli Renamed'; const r = aggregate(seasonGames()).by.p4;
+          byId('p4').name = 'Eli Brooks'; return r ? r.gp : 0; })()""")
+        check("renaming a player keeps their history", renamed == 5, f"{renamed} games")
+
+        pg.click('#tabs button[data-tab="log"]')
+        pg.wait_for_timeout(250)
+        hist = pg.evaluate("""(() => ({ rows: document.querySelectorAll('#v-log [data-game]').length,
+          months: document.querySelectorAll('#v-log .monthlab').length,
+          newest: document.querySelector('#v-log [data-game] .s').textContent }))()""")
+        check("History lists past games by date, newest first",
+              hist["rows"] == 5 and hist["months"] >= 1 and "Rivals 4" in hist["newest"], str(hist))
+        pg.click("#v-log [data-game]")
+        pg.wait_for_timeout(200)
+        detail = pg.evaluate("""(() => ({ players: document.querySelectorAll('#modalbody > .stage').length,
+          shifts: document.querySelectorAll('#modalbody .hgroup').length }))()""")
+        check("a past game opens with its players and shifts", detail["players"] >= 13 and detail["shifts"] >= 5, str(detail))
+        pg.click("#g-del")
+        pg.wait_for_timeout(150)
+        pg.click("#modalok")
+        pg.wait_for_timeout(200)
+        check("a past game can be deleted", pg.evaluate("S.archive.length") == 4)
+
+        old = pg.evaluate("""(() => { const g = upgradeGame({ at: Date.now() - 864e5, periods: 2,
+            score: { us: 2, them: 1, usShots: 5, usSOG: 3, themShots: 2, themSOG: 1 },
+            totals: [{ name: 'Ava Chen', number: '2', GK: 0, DEF: 600, MID: 0, FWD: 900, total: 1500, pos: 'LD 10.0, ST 15.0' },
+                     { name: 'Nobody Here', number: '99', GK: 0, DEF: 0, MID: 0, FWD: 0, total: 0 }] }, S.roster);
+          return { id: g.players[0].id, ld: g.players[0].pos.LD, unmatched: g.players[1].id, result: hasResult(g) }; })()""")
+        check("games filed before this update are converted",
+              old["id"] == "p0" and old["ld"] == 600 and old["unmatched"] is None and old["result"], str(old))
+
+        pg.click('#tabs button[data-tab="times"]')
+        pg.wait_for_timeout(150)
+        pg.click('#v-times [data-tv="season"]')
+        pg.wait_for_timeout(200)
+        srows = pg.evaluate("document.querySelectorAll('#v-times [data-season]').length")
+        check("the Season view lists every player", srows == 13, f"{srows} rows")
+        pg.set_viewport_size({"width": 360, "height": 800})
+        pg.wait_for_timeout(120)
+        check("the Season view fits at 360 px",
+              not pg.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth"))
+        pg.set_viewport_size({"width": 390, "height": 844})
+        pg.click('#v-times [data-tv="game"]')
+
+        def plans_p6(on):
+            pg.evaluate(SEED, [ROSTER[:10], 7, False])
+            return pg.evaluate("""(on) => {
+              const saved = S.archive; S.settings.seasonBalance = on;
+              S.archive = [{ id: 'g1', v: 2, date: Date.now() - 864e5, players: S.roster.map(p => ({ id: p.id, name: p.name,
+                number: p.number, attended: true, total: p.id === 'p6' ? 0 : 900, GK: 0, DEF: 0, MID: 0, FWD: 0, pos: {} })) }];
+              S.archive[0].playerSeconds = S.archive[0].players.reduce((a, p) => a + p.total, 0);
+              S.game.base = 300; invalidate(); S.game.next = null; autoFillNext();
+              const planned = Object.values(S.game.next).flat().includes('p6');
+              S.settings.seasonBalance = false; S.archive = saved; S.game.next = null;
+              return planned; }""", on)
+        with_on, with_off = plans_p6(True), plans_p6(False)
+        check("season balance keeps on a kid who is behind over past games", with_on and not with_off,
+              f"on: {with_on}, off: {with_off}")
+
+        pg.evaluate(SEED, [ROSTER, 7, True])
+        gk = pg.evaluate("""(() => {
+          const saved = S.archive; S.settings.goalieRotation = true;
+          S.archive = [{ id: 'g1', v: 2, date: Date.now() - 864e5, players: S.roster.map(p => ({ id: p.id, name: p.name,
+            number: p.number, attended: true, total: 600, GK: p.id === 'p1' ? 600 : 0, DEF: 0, MID: 0, FWD: 0, pos: {},
+            gkPeriods: p.id === 'p1' ? 2 : 0 })) }];
+          activeTab = 'next'; render();
+          const order = goalieOrder().map(x => x.p.id), card = !!document.getElementById('n-gk');
+          if (card) document.getElementById('n-gk').click();
+          const planned = ensureNext().GK[0];
+          S.settings.goalieRotation = false; S.archive = saved; S.game.next = null; activeTab = 'field'; render();
+          return { first: order[0], p1last: order.indexOf('p1') === order.length - 1,
+                   keeperListed: order.includes('p0'), card, planned }; })()""")
+        check("goalie suggestion skips the keeper and favors who hasn't been in goal",
+              gk["first"] != "p0" and not gk["keeperListed"] and gk["p1last"], str(gk))
+        check("the Next tab offers to put them in goal", gk["card"] and gk["planned"] == gk["first"], str(gk))
+
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        nag = pg.evaluate("""(() => {
+          S.game.running = false; S.game.periodOver = false; S.game.pausedAt = Date.now() - 130000; S.game.nagged = false;
+          tick(); const on = document.getElementById('topbar').classList.contains('paused'), nagged = S.game.nagged;
+          S.settings.pauseReminder = false; tick(); const off = document.getElementById('topbar').classList.contains('paused');
+          S.settings.pauseReminder = true; S.game.pausedAt = null; tick();
+          return { on, nagged, off }; })()""")
+        check("a clock left paused mid-game gets a reminder", nag["on"] and nag["nagged"], str(nag))
+        check("the reminder can be turned off", not nag["off"])
+        pg.evaluate("S.archive = []; render();")
+
+        # ---------------------------------------------------------------
         section("Haptics")
         pg.evaluate(SEED, [ROSTER, 7, False])
         pg.click('#tabs button[data-tab="field"]')

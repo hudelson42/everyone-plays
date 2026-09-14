@@ -35,6 +35,11 @@ head while nine kids ask you when they're going on.
   for the parent emails.
 - **More than one team.** Each team keeps its own roster, settings, minutes and
   history. Tap the team name on the Roster tab to switch.
+- **The whole season.** Past games are listed by date. The Season view adds them
+  up: games played and missed, minutes, each kid's share of an even split, and
+  positions played, plus the team's record in Advanced mode. It can also even
+  out playing time across games, suggest who goes in goal next, and remind you
+  when the clock has been left paused.
 
 Optional Advanced mode adds formations, goals, assists, shots, cards, opponent
 scoring and season totals. Leave it off and the app stays simple.

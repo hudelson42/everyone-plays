@@ -209,6 +209,15 @@ body.sun .startrow>b:first-child{color:#fff}
   border:1px solid var(--line);border-radius:var(--r);background:var(--panel);text-align:left;font:inherit;color:inherit}
 .teambar b{flex:1;min-width:0;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .teambar .muted{flex:none}
+.monthlab{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);margin:14px 2px 6px}
+.gamerow{display:flex;align-items:center;gap:10px;width:100%;padding:10px;margin-bottom:6px;min-height:var(--tap);
+  border:1px solid var(--line);border-radius:var(--r);background:var(--panel);text-align:left;font:inherit;color:inherit}
+.gamerow .t{flex:none;min-width:84px;font-size:13px;font-weight:700}
+.gamerow .s{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tr.low td:last-child{color:var(--warn);font-weight:700}
+#topbar.paused #tb-go{background:var(--warn);color:#06150E;border-color:var(--warn);animation:nudge 1.2s ease-in-out infinite}
+@keyframes nudge{50%{transform:scale(1.08)}}
+@media (prefers-reduced-motion:reduce){#topbar.paused #tb-go{animation:none}}
 .helpq{font-size:15px;font-weight:700;margin:16px 0 5px}
 .helpq:first-child{margin-top:0}
 .helpa{font-size:14px;line-height:1.45;color:var(--ink-dim)}
@@ -425,13 +434,15 @@ const DEFAULTS = {
   settings:{
     advanced:false, teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:5,
     minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:null /* no limit */, rotate:true, freshPositions:true,
-    confirmChanges:true, autoPlan:true, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false
+    confirmChanges:true, autoPlan:true, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
+    seasonBalance:false, goalieRotation:false, pauseReminder:true
   },
   game:newGame(), archive:[], lineups:[]
 };
 function newGame(){
-  return { log:[], seq:0, shift:1, period:1, running:false, startedAt:null, base:0,
-           priorTotal:0, periodOver:false, shiftStart:0, warned:false, alerted:false, adj:{}, next:null };
+  return { id:uid(), log:[], seq:0, shift:1, period:1, running:false, startedAt:null, base:0,
+           priorTotal:0, periodOver:false, shiftStart:0, warned:false, alerted:false, adj:{}, next:null,
+           date:null, opponent:"", present:null, pausedAt:null, nagged:false };
 }
 /* Turn whatever came out of storage or a backup into a complete state object: settings added
    since it was saved get their defaults, and the phone-level settings come from the index. */
@@ -442,8 +453,9 @@ function hydrate(saved){
   if(!Array.isArray(s.roster)) s.roster = [];
   s.roster.forEach(p => { if(!p.elig) p.elig = newElig(); });
   if(!s.lineups) s.lineups = []; if(!s.archive) s.archive = [];
+  s.archive = s.archive.map(a => upgradeGame(a, s.roster)).filter(Boolean);
   if(!s.game.shift) s.game.shift = 1; s.game.log.forEach(e => { if(!e.sh) e.sh = 1; if(!e.eid) e.eid = uid(); });
-  if(s.game.running){ s.game.base = Math.min(s.game.base, s.settings.periodLen*60); s.game.running = false; s.game.startedAt = null; }
+  if(s.game.running){ s.game.base = Math.min(s.game.base, s.settings.periodLen*60); s.game.running = false; s.game.startedAt = null; s.game.pausedAt = Date.now(); }
   return s;
 }
 let S = JSON.parse(JSON.stringify(DEFAULTS));
@@ -479,7 +491,7 @@ function resetView(){
 }
 /* Two clocks can't run at once — the clock only moves on the screen you're looking at —
    so leaving a team banks its time and stops it. */
-function pauseClock(){ if(S.game.running){ S.game.base = periodElapsed(); S.game.running = false; S.game.startedAt = null; wake(false); } }
+function pauseClock(){ if(S.game.running){ S.game.base = periodElapsed(); S.game.running = false; S.game.startedAt = null; S.game.pausedAt = Date.now(); wake(false); } }
 async function openTeam(id, msg){
   pauseClock(); clearTimeout(saveTimer); await Store.save(S);
   TEAMS.active = id;
@@ -662,28 +674,11 @@ function _compute(){
   return st;
 }
 
+/* Reads the per-game summaries, not the logs — older games' logs are trimmed, and reading
+   them used to throw once a team had more than three past games. */
 function computeSeasonStats(pid){
-  let goals=0, assists=0, saves=0, ga=0, yellows=0, reds=0, shots=0, sog=0;
-  S.archive.forEach(g => {
-    g.log.forEach(e => {
-      if(e.playerId !== pid) return;
-      if(e.type==="GOAL"){ goals++; sog++; shots++; }
-      if(e.type==="SOG"){ sog++; shots++; }
-      if(e.type==="SHOT"){ shots++; }
-      if(e.type==="ASSIST") assists++;
-      if(e.type==="SAVE") saves++;
-      if(e.type==="YELLOW") yellows++;
-      if(e.type==="RED") reds++;
-      if(e.type==="GA") ga++;
-    });
-  });
-  const st = compute();
-  if(st[pid]){
-    goals += st[pid].goals; assists += st[pid].assists; saves += st[pid].saves;
-    ga += st[pid].ga; yellows += st[pid].yellows; reds += st[pid].reds;
-    shots += st[pid].shots; sog += st[pid].sog;
-  }
-  return {goals, assists, saves, ga, yellows, reds, shots, sog};
+  const r = aggregate(seasonGames()).by[pid] || {}, z = k => r[k] || 0;
+  return {goals:z("goals"), assists:z("assists"), saves:z("saves"), ga:z("ga"), yellows:z("yellows"), reds:z("reds"), shots:z("shots"), sog:z("sog")};
 }
 
 function isSinBin(pid){
@@ -944,8 +939,11 @@ function autoFillNext(){
   const keeper = S.roster.find(p => st[p.id].onBand === "GK");
   if(slotsFor("GK") && keeper && available(keeper) && eligible(keeper,"GK")) locked[keeper.id] = "GK";
 
+  /* with seasonBalance on, a kid behind an even share over past games moves up the order */
+  const season = (S.settings.seasonBalance && S.archive.length) ? seasonBalance() : null, owed = seasonOwed(season);
   const byMinutes = (a,b) => {
-    if(st[a.id].total !== st[b.id].total) return st[a.id].total - st[b.id].total;
+    const ta = st[a.id].total - (owed[a.id]||0), tb = st[b.id].total - (owed[b.id]||0);
+    if(ta !== tb) return ta - tb;
     const la = st[a.id].lastOff == null ? -1 : st[a.id].lastOff, lb = st[b.id].lastOff == null ? -1 : st[b.id].lastOff;
     if(la !== lb) return la - lb;
     return (parseInt(a.number)||99) - (parseInt(b.number)||99);
@@ -974,7 +972,8 @@ function autoFillNext(){
      bucketed to 30 s so a few seconds' difference doesn't override the next tiebreak. */
   const fresh = S.settings.freshPositions !== false, q = sec => Math.round((sec||0)/30);
   const cost = (p, s) => { const r = st[p.id];
-    return [eligible(p, s.band) ? 0 : 1, s.band === "GK" ? 1 : 0, fresh ? q(r.pos[s.pos]) : q(r[s.band]), fresh ? q(r[s.band]) : 0]; };
+    const past = season && season.posAvg[p.id] ? (season.posAvg[p.id][s.pos] || 0) : 0;   /* avg per past game */
+    return [eligible(p, s.band) ? 0 : 1, s.band === "GK" ? 1 : 0, fresh ? q((r.pos[s.pos]||0) + past) : q(r[s.band]), fresh ? q(r[s.band]) : 0]; };
   const better = (a, b) => { for(let k=0;k<a.length;k++) if(a[k] !== b[k]) return a[k] < b[k]; return false; };
   const incoming = squad.filter(p => !spot[p.id]);
   while(incoming.length && free.length){
@@ -1016,8 +1015,9 @@ function lastBandOf(pid){
   return null;
 }
 function nextUpIds(k){
-  const st = compute();
-  return S.roster.filter(p => !st[p.id].onBand && available(p)).sort((a,b) => st[a.id].total - st[b.id].total).slice(0,k).map(p => p.id);
+  const st = compute(), owed = seasonOwed();
+  return S.roster.filter(p => !st[p.id].onBand && available(p))
+    .sort((a,b) => (st[a.id].total - (owed[a.id]||0)) - (st[b.id].total - (owed[b.id]||0))).slice(0,k).map(p => p.id);
 }
 
 /* ---------------- audio / haptics / wake ---------------- */
@@ -1069,18 +1069,21 @@ document.addEventListener("visibilitychange", ()=>{
 /* ---------------- clock control ---------------- */
 function startClock(){
   if(S.game.periodOver){ toast(S.game.period >= S.settings.periods ? "Game over" : "Start next period on Clock tab"); return; }
-  S.game.running = true; S.game.startedAt = Date.now();
+  /* the first kickoff dates the game and records who was there */
+  if(!S.game.date) S.game.date = Date.now();
+  if(!S.game.present) S.game.present = S.roster.filter(available).map(p => p.id);
+  S.game.running = true; S.game.startedAt = Date.now(); S.game.pausedAt = null; S.game.nagged = false;
   if(!S.game.log.length && !S.game.shiftStart) resetShiftClock();
   wake(true); save(); render();
 }
 function stopClock(){
-  if(S.game.running){ S.game.base = periodElapsed(); S.game.running = false; S.game.startedAt = null; }
+  if(S.game.running){ S.game.base = periodElapsed(); S.game.running = false; S.game.startedAt = null; S.game.pausedAt = Date.now(); }
   wake(false); save(); render();
 }
 function toggleClock(){ S.game.running ? stopClock() : startClock(); }
 function endPeriodNow(){ stopClock(); S.game.periodOver = true; push([{type:"PERIOD_END"}]); alarm("end"); render(); }
 function nextPeriod(){
-  S.game.priorTotal += S.game.base; S.game.base = 0; S.game.period++; S.game.periodOver = false;
+  S.game.priorTotal += S.game.base; S.game.base = 0; S.game.period++; S.game.periodOver = false; S.game.pausedAt = null;
   beginNewShift(); save();
   /* halftime is when coaches reset everything — land them on the lineup, not the clock */
   if(S.settings.autoPlan){ maybeAutoPlan(); if(nextCount()){ activeTab = "next"; } }
@@ -1097,6 +1100,13 @@ function tick(){
     if(!g.warned && rem <= s.warnLead && rem > 0 && !guard && s.warnLead > 0){ g.warned = true; alarm("warn"); }
     if(!g.alerted && rem <= 0 && !guard){ g.alerted = true; alarm("end"); }
   }
+  /* The most common way minutes go wrong is a clock left paused after a stoppage. Two minutes
+     paused mid-period with players on the field gets one nudge and a pulsing START. Halftime
+     doesn't count — nextPeriod clears pausedAt. */
+  const idle = S.settings.pauseReminder !== false && !g.running && !g.periodOver && g.pausedAt &&
+    (Date.now() - g.pausedAt) > 120000 && Object.values(compute()).some(r => r.onBand);
+  document.getElementById("topbar").classList.toggle("paused", !!idle);
+  if(idle && !g.nagged){ g.nagged = true; alarm("warn"); toast("The clock is still paused. Tap START when play restarts."); }
   checkSinBin();
   paintClocks(); paintLive();
 }
@@ -1549,10 +1559,14 @@ function renderNext(){
       avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="tm mono">'+fmt(st[p.id].total)+'</span></button>';
   }).join("") : '<div class="muted">Everyone available is in the plan.</div>') + '</div></div>';
 
+  /* advanced option: who has been in goal least, since keepers are never rotated automatically */
+  const gkList = (S.settings.advanced && S.settings.goalieRotation && slotsFor("GK")) ? goalieOrder() : [];
+  const gkCard = gkList.length ? '<div class="card" style="margin-bottom:10px"><b>In goal next?</b> <span class="muted">'+esc(gkList[0].p.name)+' has '+periodsText(gkList[0].periods)+' in goal so far</span>'+
+    '<div class="row" style="margin-top:8px"><button class="btn" id="n-gk">Put '+esc(first(gkList[0].p.id))+' in goal</button><button class="btn ghost" id="n-gklist">See everyone</button></div></div>' : '';
   const summary = placed ? comingOn+" on · "+comingOff+" off"+(moving?" · "+moving+" switching spots":"") : "Nothing planned yet. Auto-fill it, or drag players into the spots you want to change.";
   document.getElementById("v-next").innerHTML =
     '<div class="card" style="margin-bottom:10px"><b>Shift '+(S.game.shift+1)+'</b> <span class="muted">· '+summary+'</span><div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn ghost" id="n-load">Load lineup</button><button class="btn ghost" id="n-save"'+(placed?"":" disabled")+'>Save</button></div><div class="row" style="margin-top:8px"><button class="btn ghost wide" id="n-clear"'+(placed?"":" disabled")+'>Clear plan</button></div><button class="btn primary wide" id="n-send" style="margin-top:8px"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes to send")+'</button></div>'+
-    pitch + '<div class="hint">Faded players are holding their spot — leave a slot alone and nobody there changes. Tap a spot then a player, tap a player then a spot, or press and hold to drag.</div><h3>Available — lowest minutes first</h3>'+poolHTML;
+    gkCard + pitch + '<div class="hint">Faded players are holding their spot — leave a slot alone and nobody there changes. Tap a spot then a player, tap a player then a spot, or press and hold to drag.</div><h3>Available — lowest minutes first</h3>'+poolHTML;
 
   document.querySelectorAll("#v-next [data-chip],#v-next [data-nslot]").forEach(el => {
     el.addEventListener("click", ()=>{
@@ -1564,6 +1578,14 @@ function renderNext(){
       else if(hasPlayer) tapNextChip(el.dataset.chip);
     });
     if(el.dataset.chip) armDrag(el);
+  });
+  const planGoalie = id => { planInto(id, "GK", 0); render(); toast(first(id)+" planned in goal"); };
+  const ngk = document.getElementById("n-gk"); if(ngk) ngk.addEventListener("click", ()=>planGoalie(gkList[0].p.id));
+  const ngl = document.getElementById("n-gklist");
+  if(ngl) ngl.addEventListener("click", ()=>{
+    modal("Goalie so far", '<div class="muted" style="margin-bottom:8px">Fewest periods in goal first, across past games and this one. Tap someone to plan them in goal.</div><div class="lulist">'+
+      gkList.map(x => '<button data-gkpick="'+x.p.id+'"><b>'+esc(x.p.name)+'</b><span class="muted" style="flex:none">'+periodsText(x.periods)+' · '+mins(x.secs)+' min</span></button>').join("")+'</div>', null, null, "Close");
+    document.querySelectorAll("#modalbody [data-gkpick]").forEach(el => el.addEventListener("click", ()=>{ const id = el.dataset.gkpick; closeModal(); planGoalie(id); }));
   });
   document.getElementById("n-auto").addEventListener("click", ()=>{ S.game.planCleared = false; autoFillNext(); render(); toast("Filled by fewest minutes played"); });
   document.getElementById("n-clear").addEventListener("click", ()=>{ S.game.next = null; S.game.planCleared = true; ensureNext(); nextSel = null; save(); render(); });
@@ -1663,25 +1685,217 @@ function renderClock(){
     setTimeout(()=>{ const n=document.getElementById("notetext"); if(n) n.focus(); }, 60);
   });
   document.getElementById("c-new").addEventListener("click", ()=>{
-    modal("Start a new game?", "This game's minutes go to History. The roster, photos and settings stay put.", "Start new game", ()=>{ archiveGame(); S.game = newGame(); save(); render(); toast("New game ready"); });
+    modal("Start a new game?", '<div style="font-size:15px;margin-bottom:10px">This game goes into History and the season totals. The roster, photos and settings stay put.</div>'+
+      '<label class="field"><span>Next opponent (optional)</span><input type="text" id="ng-opp" maxlength="40"></label>', "Start new game", ()=>{
+      const opp = (document.getElementById("ng-opp").value || "").trim();
+      archiveGame(); S.game = newGame(); S.game.opponent = opp; save(); render(); toast("New game ready");
+    });
   });
 }
+const ARCHIVE_MAX = 100, LOGS_KEPT = 3;
 function archiveGame(){
   if(!S.game.log.length) return;
-  const st = compute(), sc = computeMatchScore();
-  S.archive.unshift({
-    at: Date.now(), periods: S.game.period, score: sc,
-    totals: S.roster.map(p => ({name:p.name, number:p.number, GK:Math.round(st[p.id].GK), DEF:Math.round(st[p.id].DEF), MID:Math.round(st[p.id].MID), FWD:Math.round(st[p.id].FWD), total:Math.round(st[p.id].total), pos:posSummary(st[p.id], ", ")})),
-    log: S.game.log.slice()
+  S.archive.unshift(Object.assign(summarizeGame(), {at: Date.now(), log: S.game.log.slice()}));
+  S.archive = S.archive.slice(0, ARCHIVE_MAX);
+  /* The summary is everything the season view needs. Full event logs are kept for the last few
+     games only — logs plus base64 photos would otherwise approach the storage quota. */
+  S.archive.forEach((a,i) => { if(i >= LOGS_KEPT) delete a.log; });
+}
+
+/* ---------------- past games & season ---------------- */
+/* A game boiled down to what season totals need, keyed by player id so a renamed player keeps
+   their history. Built by New game, and on the fly for the game in progress. */
+function summarizeGame(){
+  const g = S.game, st = compute(), log = g.log, now = gameElapsed(), R = x => Math.round(x || 0);
+  const present = g.present ? new Set(g.present) : null;
+  const firstOn = log.find(e => e.type === "ON");
+  const starters = new Set(firstOn ? log.filter(e => e.g === firstOn.g && e.type === "ON").map(e => e.playerId) : []);
+  /* replay once for shifts played and time in goal per period ("2 periods in goal") */
+  const shifts = {}, on = new Set(), gkOpen = {}, gkPer = {};
+  const addShift = (pid, sh) => { (shifts[pid] = shifts[pid] || new Set()).add(sh || 1); };
+  const gkAdd = (pid, period, secs) => { const m = gkPer[pid] = gkPer[pid] || {}; m[period] = (m[period] || 0) + secs; };
+  log.forEach(e => {
+    on.forEach(pid => addShift(pid, e.sh));
+    if(e.type === "PERIOD_END"){ Object.keys(gkOpen).forEach(pid => { gkAdd(pid, e.period, e.gt - gkOpen[pid]); gkOpen[pid] = e.gt; }); return; }
+    if(!e.playerId || !(e.type === "ON" || e.type === "OFF" || e.type === "MOVE")) return;
+    if(gkOpen[e.playerId] !== undefined){ gkAdd(e.playerId, e.period, e.gt - gkOpen[e.playerId]); delete gkOpen[e.playerId]; }
+    if(e.type === "OFF") on.delete(e.playerId);
+    else { on.add(e.playerId); addShift(e.playerId, e.sh); if(e.band === "GK") gkOpen[e.playerId] = e.gt; }
   });
-  S.archive = S.archive.slice(0,12);
-  /* keep full event logs for the last few games only — totals are what matter later,
-     and logs plus base64 photos will blow the storage quota */
-  S.archive.forEach((a,i) => { if(i >= 3) delete a.log; });
+  Object.keys(gkOpen).forEach(pid => gkAdd(pid, g.period, now - gkOpen[pid]));
+  const players = S.roster.map(p => {
+    const r = st[p.id], pos = {};
+    Object.keys(r.pos).forEach(c => { if(r.pos[c] >= 1) pos[c] = R(r.pos[c]); });
+    return { id:p.id, name:p.name, number:p.number,
+      attended: (present ? present.has(p.id) : false) || r.total > 0,
+      started: starters.has(p.id), shifts: shifts[p.id] ? shifts[p.id].size : 0,
+      GK:R(r.GK), DEF:R(r.DEF), MID:R(r.MID), FWD:R(r.FWD), total:R(r.total), pos,
+      goals:r.goals, assists:r.assists, shots:r.shots, sog:r.sog, saves:r.saves, ga:r.ga, yellows:r.yellows, reds:r.reds,
+      gkPeriods: Object.values(gkPer[p.id] || {}).filter(s => s >= 120).length };
+  });
+  return { id:g.id || uid(), v:2, date:g.date || Date.now(), opponent:g.opponent || "", periods:g.period, endGt:R(now),
+           advanced:!!S.settings.advanced, score:computeMatchScore(), playerSeconds:players.reduce((a,p) => a + p.total, 0), players };
+}
+/* Games filed before summaries existed kept a table keyed by name. Convert them, matching players
+   by name and number, and recover stats from the log where one was kept. */
+function upgradeGame(a, roster){
+  if(!a || a.players) return a;
+  const ev = {};
+  (a.log || []).forEach(e => {
+    if(!e.playerId) return;
+    const t = ev[e.playerId] = ev[e.playerId] || {goals:0, assists:0, shots:0, sog:0, saves:0, ga:0, yellows:0, reds:0};
+    if(e.type==="GOAL"){ t.goals++; t.sog++; t.shots++; } else if(e.type==="SOG"){ t.sog++; t.shots++; } else if(e.type==="SHOT") t.shots++;
+    else if(e.type==="ASSIST") t.assists++; else if(e.type==="SAVE") t.saves++; else if(e.type==="GA") t.ga++;
+    else if(e.type==="YELLOW") t.yellows++; else if(e.type==="RED") t.reds++;
+  });
+  const players = (a.totals || []).map(t => {
+    const p = roster.find(r => r.name === t.name && String(r.number||"") === String(t.number||"")) || roster.find(r => r.name === t.name);
+    const pos = {};
+    String(t.pos || "").split(/[;,]/).forEach(x => { const m = x.trim().match(/^(\S+)\s+([\d.]+)$/); if(m) pos[m[1]] = Math.round(parseFloat(m[2]) * 60); });
+    return Object.assign({id:p ? p.id : null, name:t.name, number:t.number, attended:(t.total||0) > 0, started:false, shifts:0,
+      GK:t.GK||0, DEF:t.DEF||0, MID:t.MID||0, FWD:t.FWD||0, total:t.total||0, pos, gkPeriods:(t.GK||0) >= 120 ? 1 : 0,
+      goals:0, assists:0, shots:0, sog:0, saves:0, ga:0, yellows:0, reds:0}, (p && ev[p.id]) || {});
+  });
+  const out = {id:uid(), v:2, date:a.at || Date.now(), at:a.at, opponent:"", periods:a.periods || 1,
+               endGt:a.log && a.log.length ? a.log[a.log.length-1].gt : 0, score:a.score || null,
+               playerSeconds:players.reduce((x,p) => x + p.total, 0), players};
+  if(a.log) out.log = a.log;
+  return out;
+}
+function pastGames(){ return S.archive.slice().sort((a,b) => (b.date||0) - (a.date||0)); }
+/* finished games plus the one in progress, newest first */
+function seasonGames(limit){
+  const games = pastGames();
+  if(S.game.log.length) games.unshift(Object.assign(summarizeGame(), {current:true}));
+  return limit ? games.slice(0, limit) : games;
+}
+/* Only games where results were being tracked count toward the record — a basic-mode game's 0–0
+   isn't a draw. Converted old games count if anything was logged. */
+function hasResult(a){
+  const s = a.score; if(!s) return false;
+  return a.advanced !== undefined ? !!a.advanced : (s.us + s.them + (s.usShots||0) + (s.themShots||0)) > 0;
+}
+function resultText(s){ return (s.us > s.them ? "W " : s.us < s.them ? "L " : "D ") + s.us + "–" + s.them; }
+function periodsText(n){ return n === 1 ? "1 period" : n + " periods"; }
+/* Share compares a player's minutes with an even split of the games they came to, so a kid who
+   missed three weeks isn't flagged for it. */
+function aggregate(games){
+  const by = {}, team = {games:0, record:0, w:0, l:0, d:0, gf:0, ga:0, shots:0, sog:0, oppShots:0, oppSog:0};
+  const STATS = ["goals","assists","shots","sog","saves","ga","yellows","reds","gkPeriods"];
+  games.forEach(a => {
+    team.games++;
+    if(hasResult(a)){
+      const s = a.score;
+      team.gf += s.us; team.ga += s.them; team.shots += s.usShots||0; team.sog += s.usSOG||0; team.oppShots += s.themShots||0; team.oppSog += s.themSOG||0;
+      if(!a.current){ team.record++; if(s.us > s.them) team.w++; else if(s.us < s.them) team.l++; else team.d++; }
+    }
+    const came = a.players.filter(p => p.attended || p.total > 0);
+    const even = came.length ? (a.playerSeconds != null ? a.playerSeconds : came.reduce((x,p) => x + p.total, 0)) / came.length : 0;
+    a.players.forEach(p => {
+      if(!p.id) return;
+      const r = by[p.id] = by[p.id] || {gp:0, missed:0, missedDates:[], total:0, expected:0, GK:0, DEF:0, MID:0, FWD:0, pos:{}, starts:0, shifts:0,
+                                        goals:0, assists:0, shots:0, sog:0, saves:0, ga:0, yellows:0, reds:0, gkPeriods:0};
+      if(!(p.attended || p.total > 0)){ r.missed++; r.missedDates.push(a.date); return; }
+      r.gp++; r.total += p.total; r.expected += even; r.starts += p.started ? 1 : 0; r.shifts += p.shifts || 0;
+      BANDS.forEach(b => { r[b] += p[b] || 0; });
+      Object.keys(p.pos || {}).forEach(c => { r.pos[c] = (r.pos[c] || 0) + p.pos[c]; });
+      STATS.forEach(k => { r[k] += p[k] || 0; });
+    });
+  });
+  Object.keys(by).forEach(id => { const r = by[id]; r.share = r.expected > 0 ? r.total / r.expected : null; });
+  return {by, team};
+}
+/* finished games only: seconds behind an even share, and average time per game in each position */
+function seasonBalance(){
+  const by = aggregate(S.archive).by, out = {behind:{}, posAvg:{}};
+  Object.keys(by).forEach(id => {
+    const r = by[id], avg = {};
+    out.behind[id] = r.expected - r.total;
+    Object.keys(r.pos).forEach(c => { avg[c] = r.pos[c] / Math.max(1, r.gp); });
+    out.posAvg[id] = avg;
+  });
+  return out;
+}
+/* Capped at one shift, so a kid who is behind gets about one extra shift a game until caught up
+   rather than the whole game, and this game's minutes still come out close to even. */
+function seasonOwed(season){
+  if(season === undefined) season = (S.settings.seasonBalance && S.archive.length) ? seasonBalance() : null;
+  if(!season) return {};
+  const cap = (S.settings.shiftLen || 5) * 60, out = {};
+  Object.keys(season.behind).forEach(id => { out[id] = Math.max(-cap, Math.min(cap, season.behind[id])); });
+  return out;
+}
+/* who has been in goal least — periods first, then minutes — this game included, current keeper excluded */
+function goalieOrder(){
+  const by = aggregate(seasonGames()).by, st = compute();
+  return S.roster.filter(p => available(p) && eligible(p, "GK") && st[p.id].onBand !== "GK")
+    .map(p => ({p, periods:(by[p.id] || {}).gkPeriods || 0, secs:(by[p.id] || {}).GK || 0}))
+    .sort((a,b) => a.periods - b.periods || a.secs - b.secs || (parseInt(a.p.number)||99) - (parseInt(b.p.number)||99));
+}
+let timesView = "game", seasonLimit = 0, seasonSort = "share", seasonDir = 1;
+function viewToggle(){
+  return '<div class="seg" style="margin-bottom:10px"><button data-tv="game" class="'+(timesView === "game" ? "on" : "")+'">This game</button>'+
+    '<button data-tv="season" class="'+(timesView === "season" ? "on" : "")+'">Season</button></div>';
+}
+function bindViewToggle(){ document.querySelectorAll("#v-times [data-tv]").forEach(b => b.addEventListener("click", ()=>{ timesView = b.dataset.tv; render(); })); }
+function renderSeason(){
+  const games = seasonGames(seasonLimit), agg = aggregate(games), by = agg.by, team = agg.team, adv = S.settings.advanced;
+  const finished = games.filter(g => !g.current).length, live = games.some(g => g.current);
+  const rows = S.roster.filter(p => by[p.id]).map(p => ({p, r:by[p.id]}));
+  const val = x => seasonSort === "name" ? x.p.name.toLowerCase() : seasonSort === "gp" ? x.r.gp : seasonSort === "total" ? x.r.total
+    : seasonSort === "avg" ? (x.r.gp ? x.r.total / x.r.gp : 0) : (x.r.share == null ? 99 : x.r.share);
+  rows.sort((a,b) => { const va = val(a), vb = val(b); return seasonDir * (typeof va === "string" ? va.localeCompare(vb) : va - vb); });
+  const th = (k,l) => '<th class="sortable'+(seasonSort === k ? " sorted" : "")+'" data-ssort="'+k+'">'+l+'</th>';
+  const low = r => r.share != null && r.share < 0.85, lows = rows.filter(x => low(x.r));
+  const body = rows.map(({p, r}) =>
+    '<tr'+(low(r) ? ' class="low"' : '')+'><td><button class="pname" data-season="'+p.id+'" style="width:100%;height:50px;font:inherit;color:inherit;text-align:left"><div class="pnum" style="background:'+colorOf(p.number)+'">'+esc(p.number||"–")+'</div><b>'+esc(p.name)+'</b></button></td>'+
+    '<td class="t"><div class="mono">'+r.gp+'</div>'+(r.missed ? '<div class="cnt">'+r.missed+' missed</div>' : '')+'</td>'+
+    '<td class="t mono">'+Math.round(r.total/60)+'</td>'+
+    '<td class="t mono">'+(r.gp ? (r.total/60/r.gp).toFixed(1) : "–")+'</td>'+
+    '<td class="t mono">'+(r.share == null ? "–" : Math.round(r.share*100)+"%")+'</td></tr>').join("");
+  const lim = (v,l) => '<button data-lim="'+v+'" class="'+(seasonLimit === v ? "on" : "")+'">'+l+'</button>';
+  document.getElementById("v-times").innerHTML = viewToggle()+
+    (!games.length ? '<div class="card">No games yet. This game shows up here once play starts, and every game you file with <b>New game</b> on the Clock tab adds to the season.</div>' :
+    '<div class="seg" style="margin-bottom:10px">'+lim(0,"All games")+lim(10,"Last 10")+lim(5,"Last 5")+'</div>'+
+    '<div class="muted" style="margin:0 2px 8px">'+finished+' finished game'+(finished === 1 ? '' : 's')+(live ? ' plus the one in progress' : '')+'</div>'+
+    (adv && (team.record || team.gf || team.ga) ? '<div class="card"><b>Record</b> '+team.w+'–'+team.l+'–'+team.d+' <span class="muted">W–L–D</span><div class="muted" style="margin-top:4px">Goals '+team.gf+'–'+team.ga+' · Shots '+team.shots+'–'+team.oppShots+' · On goal '+team.sog+'–'+team.oppSog+'</div></div>' : '')+
+    (lows.length ? '<div class="card" style="border-color:var(--warn)"><b>Behind on minutes:</b> '+lows.map(x => esc(x.p.name.split(" ")[0])).join(", ")+'<div class="muted" style="margin-top:4px">Under 85% of an even share of the games they came to.</div></div>' : '')+
+    '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1"><col class="ct"><col class="ct"><col class="ct"><col class="ctot"></colgroup><thead><tr>'+th("name","Player")+th("gp","GP")+th("total","Min")+th("avg","Avg")+th("share","Share")+'</tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="muted" style="padding:8px 2px">GP is games played. Share compares each player\'s minutes with an even split of the games they came to, goalie minutes included. Tap a name for positions'+(adv ? ', stats' : '')+' and missed games.</div></div>'+
+    '<div class="row"><button class="btn" id="x-scsv">Save season CSV</button></div>');
+  bindViewToggle();
+  document.querySelectorAll("#v-times [data-lim]").forEach(b => b.addEventListener("click", ()=>{ seasonLimit = parseInt(b.dataset.lim); render(); }));
+  document.querySelectorAll("#v-times [data-ssort]").forEach(el => el.addEventListener("click", ()=>{
+    const k = el.dataset.ssort; if(k === seasonSort) seasonDir *= -1; else { seasonSort = k; seasonDir = (k === "share" || k === "name") ? 1 : -1; } render();
+  }));
+  document.querySelectorAll("#v-times [data-season]").forEach(el => el.addEventListener("click", ()=>showSeasonPlayer(el.dataset.season)));
+  const xs = document.getElementById("x-scsv"); if(xs) xs.addEventListener("click", ()=>saveFile("season-"+stamp()+".csv", seasonCSV(), "text/csv"));
+}
+function showSeasonPlayer(pid){
+  const p = byId(pid), r = aggregate(seasonGames(seasonLimit)).by[pid]; if(!p || !r) return;
+  const adv = S.settings.advanced, played = POSORDER.filter(c => r.pos[c] > 0);
+  const line = (l, v) => '<div class="stage"><b>'+l+'</b> '+v+'</div>';
+  const body =
+    line("Games", r.gp+" played"+(r.starts ? " · "+r.starts+" started" : "")+(r.missed ? " · "+r.missed+' missed <span class="muted">('+r.missedDates.map(d => esc(gameDate(d))).join(", ")+')</span>' : ""))+
+    line("Minutes", mins(r.total)+" total · "+(r.gp ? mins(r.total/r.gp) : "0.0")+" per game"+(r.share != null ? " · "+Math.round(r.share*100)+"% of an even share" : ""))+
+    line("By band", "GK "+mins(r.GK)+" · D "+mins(r.DEF)+" · M "+mins(r.MID)+" · F "+mins(r.FWD))+
+    line("Positions", played.length ? played.map(c => esc(posName(c))+" "+mins(r.pos[c])).join(", ") : '<span class="muted">none recorded yet</span>')+
+    (adv ? line("Stats", r.goals+" goals · "+r.assists+" assists · "+r.shots+" shots ("+r.sog+" on goal) · "+r.saves+" saves"+(r.yellows || r.reds ? " · "+r.yellows+" yellow · "+r.reds+" red" : "")) : "")+
+    (adv && S.settings.goalieRotation ? line("In goal", periodsText(r.gkPeriods)) : "");
+  modal(p.name, body, null, null, "Close");
+}
+function seasonCSV(){
+  const by = aggregate(seasonGames(seasonLimit)).by;
+  return "Name,Number,Games,Missed,Starts,Minutes,Per game,Share,GK,Defense,Midfield,Forward,Positions,Goals,Assists,Shots,On goal,Saves,Yellow,Red\n" +
+    S.roster.filter(p => by[p.id]).map(p => { const r = by[p.id];
+      return ['"'+p.name.replace(/"/g,'""')+'"', p.number||"", r.gp, r.missed, r.starts, mins(r.total), r.gp ? mins(r.total/r.gp) : "",
+              r.share != null ? Math.round(r.share*100)+"%" : "", mins(r.GK), mins(r.DEF), mins(r.MID), mins(r.FWD), '"'+posSummary(r, "; ")+'"',
+              r.goals, r.assists, r.shots, r.sog, r.saves, r.yellows, r.reds].join(","); }).join("\n");
 }
 
 let sortKey = "total", sortDir = 1;
 function renderTimes(){
+  if(timesView === "season"){ renderSeason(); return; }
   const st = compute(), rows = S.roster.slice().sort((a,b)=>{
     if(sortKey === "name") return sortDir * a.name.localeCompare(b.name);
     if(sortKey === "number") return sortDir * ((parseInt(a.number)||99)-(parseInt(b.number)||99));
@@ -1696,8 +1910,9 @@ function renderTimes(){
   }).join("");
 
   document.getElementById("v-times").innerHTML =
-    (S.roster.length ? '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1"><col class="ct"><col class="ct"><col class="ct"><col class="ct"><col class="ctot"></colgroup><thead><tr>'+th("name","Player")+th("GK","GK")+th("DEF","DEF")+th("MID","MID")+th("FWD","FWD")+th("total","Total")+'</tr></thead><tbody>'+body+'</tbody></table><div class="muted" style="padding:8px 2px">Each cell shows time played and, below it, how many times they went into that spot. Tap a time to correct it, or a name to see which positions they have played. Green names are on the field.</div></div><div class="row"><button class="btn" id="x-csv">Save CSV</button>'+(navigator.share ? '<button class="btn" id="x-share">Share summary</button>' : '')+'<button class="btn ghost" id="x-text">Copy</button></div>' : '<div class="card">No players yet. Add your team on the Roster tab.</div>');
+    viewToggle()+(S.roster.length ? '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1"><col class="ct"><col class="ct"><col class="ct"><col class="ct"><col class="ctot"></colgroup><thead><tr>'+th("name","Player")+th("GK","GK")+th("DEF","DEF")+th("MID","MID")+th("FWD","FWD")+th("total","Total")+'</tr></thead><tbody>'+body+'</tbody></table><div class="muted" style="padding:8px 2px">Each cell shows time played and, below it, how many times they went into that spot. Tap a time to correct it, or a name to see which positions they have played. Green names are on the field.</div></div><div class="row"><button class="btn" id="x-csv">Save CSV</button>'+(navigator.share ? '<button class="btn" id="x-share">Share summary</button>' : '')+'<button class="btn ghost" id="x-text">Copy</button></div>' : '<div class="card">No players yet. Add your team on the Roster tab.</div>');
 
+  bindViewToggle();
   document.querySelectorAll("#v-times th.sortable").forEach(el => el.addEventListener("click", ()=>{
     const k = el.dataset.sort; if(k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = (k==="name"||k==="number") ? 1 : -1; } render();
   }));
@@ -1801,10 +2016,93 @@ function fixEvent(eid){
   }));
 }
 function renderLog(){
-  const log = S.game.log, byShift = {};
+  const g = S.game, log = g.log, adv = S.settings.advanced;
+  const html = shiftCardsHTML(log, {live:true, endGt:gameElapsed(), nameOf: id => { const p = byId(id); return p ? esc(p.name.split(" ")[0]) : "?"; }});
+  const sc = computeMatchScore();
+  const gameCard = '<div class="card"><div class="row" style="align-items:center"><div style="flex:3;min-width:0"><b>This game</b>'+
+      (g.opponent ? ' <span class="muted">vs</span> <b>'+esc(g.opponent)+'</b>' : '')+
+      '<div class="muted">'+(g.date ? esc(gameDate(g.date, true)) : "The date is set when you first start the clock")+
+      (adv && log.length ? ' · '+sc.us+'–'+sc.them : '')+'</div></div>'+
+      '<button class="btn ghost" id="l-edit" style="flex:1">Edit</button></div></div>';
+  const past = pastGames();
+  let month = "", pastHTML = "";
+  past.forEach(a => {
+    const m = monthLabel(a.date);
+    if(m !== month){ month = m; pastHTML += '<div class="monthlab">'+esc(m)+'</div>'; }
+    pastHTML += '<button class="gamerow" data-game="'+a.id+'"><span class="t">'+esc(gameDate(a.date))+'</span>'+
+      '<span class="s">'+(a.opponent ? 'vs <b>'+esc(a.opponent)+'</b>' : '<span class="muted">No opponent set</span>')+
+      (adv && hasResult(a) ? ' · '+resultText(a.score) : '')+'</span><span class="muted">▸</span></button>';
+  });
+  document.getElementById("v-log").innerHTML = gameCard+
+    '<div class="row" style="margin-bottom:10px"><button class="btn ghost" id="l-undo">Undo last change</button></div>'+
+    (log.length ? html : '<div class="card">No shifts yet. Each rotation you send on becomes a card here, showing who lined up where.</div>')+
+    (past.length ? '<h3>Past games</h3>'+pastHTML : '');
+
+  document.querySelectorAll("#v-log [data-sh]").forEach(el => el.addEventListener("click", ()=>{
+    const k = "s"+el.dataset.sh, top = el.closest("#v-log").querySelector(".hgroup") === el.parentElement;
+    const cur = openShifts[k] === true || (openShifts[k] === undefined && top);
+    openShifts[k] = !cur; render();
+  }));
+  document.querySelectorAll("#v-log [data-fix]").forEach(btn =>
+    btn.addEventListener("click", ()=>fixEvent(btn.dataset.fix)));
+  document.querySelectorAll("#v-log [data-del-ev]").forEach(btn => btn.addEventListener("click", ()=>{
+    const e = S.game.log.find(x => x.eid === btn.dataset.delEv); if(!e) return;
+    S.game.log = S.game.log.filter(x => x.eid !== btn.dataset.delEv);
+    invalidate(); save(); render(); toast("Deleted");
+  }));
+  document.querySelectorAll("#v-log [data-game]").forEach(el => el.addEventListener("click", ()=>showGame(el.dataset.game)));
+  document.getElementById("l-edit").addEventListener("click", ()=>editGameDetails(S.game, true));
+  document.getElementById("l-undo").addEventListener("click", undoLast);
+}
+function gameDate(ms, long){
+  return ms ? new Date(ms).toLocaleDateString(undefined, long ? {weekday:"long", month:"long", day:"numeric", year:"numeric"} : {weekday:"short", month:"short", day:"numeric"}) : "No date";
+}
+function monthLabel(ms){ return ms ? new Date(ms).toLocaleDateString(undefined, {month:"long", year:"numeric"}) : "No date"; }
+function dateInput(ms){ const d = new Date(ms), pad = n => String(n).padStart(2,"0"); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+function editGameDetails(g, current){
+  modal(current ? "This game" : "Edit game",
+    '<label class="field"><span>Date</span><input type="date" id="gd-date" value="'+(g.date ? dateInput(g.date) : "")+'"></label>'+
+    '<label class="field"><span>Opponent</span><input type="text" id="gd-opp" maxlength="40" placeholder="Optional" value="'+esc(g.opponent || "")+'"></label>'+
+    (current ? '<div class="muted">Leave the date empty and it is set when you first start the clock.</div>' : ''),
+    "Save", ()=>{
+      const d = document.getElementById("gd-date").value, o = document.getElementById("gd-opp").value.trim();
+      if(d){ const [y, m, day] = d.split("-").map(Number); g.date = new Date(y, m-1, day, 12).getTime(); }
+      else if(current) g.date = null;
+      else { toast("Pick a date"); return false; }
+      g.opponent = o; save(); render(); toast("Saved");
+    });
+}
+function showGame(id){
+  const a = S.archive.find(x => x.id === id); if(!a) return;
+  const adv = S.settings.advanced;
+  const came = a.players.filter(p => p.attended || p.total > 0).sort((x,y) => y.total - x.total);
+  const missed = a.players.filter(p => !(p.attended || p.total > 0));
+  const nameOf = pid => { const p = a.players.find(x => x.id === pid) || byId(pid); return p ? esc(String(p.name).split(" ")[0]) : "?"; };
+  const stats = p => adv ? [["G",p.goals],["A",p.assists],["Sv",p.saves],["YC",p.yellows],["RC",p.reds]].filter(x => x[1]).map(x => x[1]+x[0]).join(" ") : "";
+  const body =
+    '<div style="font-size:15px;margin-bottom:8px">'+(a.opponent ? 'vs <b>'+esc(a.opponent)+'</b>' : '<span class="muted">No opponent set</span>')+(adv && hasResult(a) ? ' · <b>'+resultText(a.score)+'</b>' : '')+'</div>'+
+    '<div class="row" style="margin-bottom:10px"><button class="btn" id="g-edit">Edit date or opponent</button><button class="btn ghost" id="g-del" style="color:var(--alert)">Delete game</button></div>'+
+    came.map(p => '<div class="stage">#'+esc(p.number||"–")+' '+esc(p.name)+' — <b>'+mins(p.total)+'</b> min'+(stats(p) ? ' · '+stats(p) : '')+
+      '<div class="muted">GK '+mins(p.GK)+' · D '+mins(p.DEF)+' · M '+mins(p.MID)+' · F '+mins(p.FWD)+(posSummary(p, ", ") ? ' · '+esc(posSummary(p, ", ")) : '')+'</div></div>').join("")+
+    (missed.length ? '<div class="stage muted">Not there: '+missed.map(p => esc(p.name)).join(", ")+'</div>' : '')+
+    (a.log ? '<h3>Shifts</h3>'+shiftCardsHTML(a.log, {live:false, endGt:a.endGt || (a.log.length ? a.log[a.log.length-1].gt : 0), nameOf})
+           : '<div class="muted" style="margin-top:8px">Shift-by-shift detail is kept for the '+LOGS_KEPT+' most recent games.</div>');
+  modal(gameDate(a.date, true), body, null, null, "Close");
+  document.getElementById("g-edit").addEventListener("click", ()=>{ closeModal(); editGameDetails(a, false); });
+  document.getElementById("g-del").addEventListener("click", ()=>{
+    closeModal();
+    modal("Delete this game?", "Its minutes come out of the season totals. There's no undo.", "Delete game", ()=>{
+      S.archive = S.archive.filter(x => x.id !== id); save(); render(); toast("Game deleted");
+    });
+  });
+}
+/* One card per shift. live: the game in progress — collapsible, events fixable and deletable.
+   Otherwise a read-only record of a past game, every card open. */
+function shiftCardsHTML(log, opts){
+  const byShift = {};
   log.forEach((e,i) => { const k = e.sh || 1; (byShift[k] = byShift[k] || []).push(i); });
   const nums = Object.keys(byShift).map(Number).sort((a,b)=>b-a);
-  const nameOf = id => { const p = byId(id); return p ? esc(p.name.split(" ")[0]) : "?"; };
+  const nameOf = opts.nameOf;
 
   /* who was standing where at a given point in the log */
   const lineAt = idx => {
@@ -1841,7 +2139,7 @@ function renderLog(){
     const events = later.filter(MATCH);
 
     const pos = nums.indexOf(sh);
-    const endGt = pos > 0 ? log[byShift[nums[pos-1]][0]].gt : gameElapsed();
+    const endGt = pos > 0 ? log[byShift[nums[pos-1]][0]].gt : opts.endGt;
     const dur = Math.max(0, endGt - first.gt);
 
     const rows = BANDS.map(b => {
@@ -1858,9 +2156,9 @@ function renderLog(){
       else if(e.type==="PERIOD_END") desc = '<span class="muted">End of period '+e.period+'</span>';
       else if(e.type.indexOf("OPP_")===0) desc = 'Opponent '+MARK[e.type];
       else desc = '<b'+(TONE[e.type]?' style="color:'+TONE[e.type]+'"':'')+'>'+MARK[e.type]+'</b> — '+nameOf(e.playerId);
-      const del = e.type==="PERIOD_END" ? "" :
+      const del = (!opts.live || e.type==="PERIOD_END") ? "" :
         '<button class="btn ghost" style="min-height:26px;height:26px;width:26px;padding:0;flex:none" data-del-ev="'+e.eid+'">×</button>';
-      const fixable = e.type === "NOTE" || (e.playerId && e.type.indexOf("OPP_") !== 0);
+      const fixable = opts.live && (e.type === "NOTE" || (e.playerId && e.type.indexOf("OPP_") !== 0));
       const label = fixable
         ? '<button data-fix="'+e.eid+'" style="flex:1;text-align:left;font:inherit;color:inherit">'+desc+'</button>'
         : '<span style="flex:1">'+desc+'</span>';
@@ -1878,9 +2176,9 @@ function renderLog(){
     const badges = Object.keys(SHORT).filter(k => tally[k])
       .map(k => '<span'+(TONE[k]?' style="color:'+TONE[k]+'"':'')+'>'+tally[k]+SHORT[k]+'</span>').join(" ");
 
-    const open = openShifts["s"+sh] === true || (openShifts["s"+sh] === undefined && pos === 0);
+    const open = !opts.live || openShifts["s"+sh] === true || (openShifts["s"+sh] === undefined && pos === 0);
     return '<div class="hgroup">'+
-      '<button class="hhead" data-sh="'+sh+'">'+
+      '<button class="hhead"'+(opts.live ? ' data-sh="'+sh+'"' : '')+'>'+
         '<span class="t mono">'+fmt2(first.gt)+'</span>'+
         '<span class="s"><b>Shift '+sh+'</b>'+(badges?' <span class="badges">'+badges+'</span>':'')+'</span>'+
         '<span class="muted">'+fmt(dur)+' · P'+first.period+(open?" ▾":" ▸")+'</span>'+
@@ -1893,27 +2191,8 @@ function renderLog(){
     '</div>';
   }).join("");
 
-  const arch = S.archive.map((a,i) => '<div class="hgroup"><button class="hhead" data-arch="'+i+'"><span class="s">'+new Date(a.at).toLocaleDateString()+' · '+(a.score?`US ${a.score.us}-${a.score.them} THEM`:'')+'</span><span class="muted">view ▸</span></button></div>').join("");
-  document.getElementById("v-log").innerHTML = '<div class="row" style="margin-bottom:10px"><button class="btn ghost" id="l-undo">Undo last change</button></div>'+(nums.length ? html : '<div class="card">No shifts yet. Each rotation you send on becomes a card here, showing who lined up where.</div>')+(S.archive.length ? '<h3>Earlier games</h3>'+arch : "");
+  return html;
 
-  document.querySelectorAll("#v-log [data-sh]").forEach(el => el.addEventListener("click", ()=>{
-    const k = "s"+el.dataset.sh, first = el.closest("#v-log").querySelector(".hgroup") === el.parentElement;
-    const cur = openShifts[k] === true || (openShifts[k] === undefined && first);
-    openShifts[k] = !cur; render();
-  }));
-  document.querySelectorAll("#v-log [data-fix]").forEach(btn =>
-    btn.addEventListener("click", ()=>fixEvent(btn.dataset.fix)));
-  document.querySelectorAll("#v-log [data-del-ev]").forEach(btn => btn.addEventListener("click", ()=>{
-    const e = S.game.log.find(x => x.eid === btn.dataset.delEv); if(!e) return;
-    S.game.log = S.game.log.filter(x => x.eid !== btn.dataset.delEv);
-    invalidate(); save(); render(); toast("Deleted");
-  }));
-  document.querySelectorAll("#v-log [data-arch]").forEach(el => el.addEventListener("click", ()=>{
-    const a = S.archive[el.dataset.arch];
-    const body = a.totals.slice().sort((x,y)=>y.total-x.total).map(t => '<div class="stage">#'+esc(t.number||"–")+' '+esc(t.name)+' — <b>'+mins(t.total)+'</b> min <span class="muted">(GK '+mins(t.GK)+' · D '+mins(t.DEF)+' · M '+mins(t.MID)+' · F '+mins(t.FWD)+')'+(t.pos ? ' · '+esc(t.pos) : '')+'</span></div>').join("");
-    modal(new Date(a.at).toLocaleDateString(), body, null, null, "Close");
-  }));
-  document.getElementById("l-undo").addEventListener("click", undoLast);
 }
 
 /* ============================================================
@@ -2033,6 +2312,8 @@ function renderHelp(){
         "Get the team arranged the way you want, either on the field or on the <b>Next</b> tab, then tap <b>Save</b> there and give it a name. Loading one puts it into the plan, so you get to look it over before anyone runs on.")+
       q("I credited the wrong player.",
         "On <b>History</b>, tap the event itself — not the ×. You get a list of who was on the field at that moment, nearest the top. Tap the right name and the clock time stays as it was. Notes can be edited the same way.")+
+      q("Where are past games?",
+        "Tap <b>New game</b> on the Clock tab after each match. The finished game moves to <b>History</b>, listed by date. Tap one to see minutes and positions, fix its date or opponent, or delete it. A game's date is set when you first start the clock.<br><br>The <b>Season</b> view on the Minutes tab adds every game up: games played and missed, minutes, and each player's share of an even split of the games they came to.")+
       q("Somebody got hurt.",
         "Tap them on the Field tab, then <b>Hurt — sub out now</b>. They come straight off and the app offers the fairest replacement.")+
       q("Is playing time really equal?",
@@ -2057,7 +2338,7 @@ function renderSetup(){
     '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b><div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
     '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
     '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
-    '<div class="card"><h2>Alerts and display</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz when you press and hold a player",s.dragBuzz!==false)+toggleRow("s-confirm","Confirm changes made by tapping",s.confirmChanges!==false)+toggleRow("s-auto","Keep the next shift ready automatically",s.autoPlan!==false)+toggleRow("s-rot","Rotate players between defense and attack",s.rotate)+toggleRow("s-fresh","Put subs in positions they haven't played",s.freshPositions!==false)+switchField(s.maxSwitch)+'<div class="adv-only">'+toggleRow("s-yc","Yellow card sends the player to a sin bin",!!s.ycSinBin)+'</div>'+toggleRow("s-sun","Sun mode — maximum contrast",s.sun)+'<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
+    '<div class="card"><h2>Alerts and display</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz when you press and hold a player",s.dragBuzz!==false)+toggleRow("s-pause","Remind me if the clock stays paused mid-game",s.pauseReminder!==false)+toggleRow("s-confirm","Confirm changes made by tapping",s.confirmChanges!==false)+toggleRow("s-auto","Keep the next shift ready automatically",s.autoPlan!==false)+toggleRow("s-rot","Rotate players between defense and attack",s.rotate)+toggleRow("s-fresh","Put subs in positions they haven't played",s.freshPositions!==false)+toggleRow("s-seasonbal","Even out playing time across past games",!!s.seasonBalance)+switchField(s.maxSwitch)+'<div class="adv-only">'+toggleRow("s-yc","Yellow card sends the player to a sin bin",!!s.ycSinBin)+toggleRow("s-gk","Suggest who goes in goal next",!!s.goalieRotation)+'</div>'+toggleRow("s-sun","Sun mode — maximum contrast",s.sun)+'<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
     '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone, and includes every team.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
     '<div class="card"><h2>About this app</h2><div class="muted" style="line-height:1.5">'+
       'Sideline tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
@@ -2086,7 +2367,7 @@ function renderSetup(){
   document.getElementById("s-form").addEventListener("change", e => { S.settings.formationIdx = parseInt(e.target.value); save(); render(); });
   bindNum("s-periods", v => S.settings.periods = v); bindNum("s-plen", v => S.settings.periodLen = v); bindNum("s-slen", v => { S.settings.shiftLen = v; S.game.warned=false; S.game.alerted=false; }); bindNum("s-warn", v => S.settings.warnLead = v); bindNum("s-min", v => S.settings.minStint = v); bindNum("s-stale", v => S.settings.staleWarn = v); bindNum("s-sin", v => S.settings.sinBinMins = v);
   document.getElementById("s-switch").addEventListener("change", e => { S.settings.maxSwitch = e.target.value === "" ? null : parseInt(e.target.value); save(); });
-  bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-dragbuzz", v => S.settings.dragBuzz = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-fresh", v => S.settings.freshPositions = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
+  bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-dragbuzz", v => S.settings.dragBuzz = v); bindTog("s-pause", v => S.settings.pauseReminder = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-fresh", v => S.settings.freshPositions = v); bindTog("s-seasonbal", v => S.settings.seasonBalance = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-gk", v => S.settings.goalieRotation = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
   document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
   document.getElementById("s-help").addEventListener("click", ()=>{ activeTab = "help"; render(); });
   document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));

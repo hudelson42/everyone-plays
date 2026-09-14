@@ -132,9 +132,31 @@ only the open team's clock can move. Always load state through `hydrate()`.
 Backups hold every team; an old single-team backup is added as a new team,
 never swapped in. The ~5 MB quota is shared by all teams.
 
-Photos are 128×128 JPEG at q=0.72, roughly 5 KB each. The archive keeps full
-event logs for the 3 most recent games only, capped at 12 games, because logs
-plus base64 photos will otherwise approach the ~5 MB localStorage ceiling.
+Photos are 128×128 JPEG at q=0.72, roughly 5 KB each. The archive holds up to
+100 game summaries (a few KB each) and keeps full event logs for the 3 most
+recent games only, because logs plus base64 photos will otherwise approach the
+~5 MB localStorage ceiling.
+
+## Past games and season
+
+**New game** files the game in `S.archive` as a summary from `summarizeGame()`:
+date (set at first kickoff), opponent, score, and for each player id whether
+they attended and started, shifts, seconds by band and by position, stats, and
+periods in goal. Everything season-related reads summaries through
+`aggregate()`, never logs. Logs are trimmed after `LOGS_KEPT` games, and reading
+them is what used to crash the Roster tab. `upgradeGame()` converts games filed
+before summaries existed. The W–L–D record only counts games played with
+Advanced mode on, so a basic game's 0–0 isn't a draw.
+
+Share is a player's minutes divided by an even split of the games they came to.
+Attendance is the `present` snapshot taken at kickoff, plus anyone who played.
+
+- `seasonBalance` (off by default) moves kids who are behind over past games up
+  the auto-fill order, capped at one shift's worth per game.
+- `goalieRotation` (Advanced) suggests the next keeper on the Next tab.
+- `pauseReminder` (on by default) nudges once after two minutes paused
+  mid-period with players on the field. `nextPeriod()` clears `pausedAt`, so
+  halftime doesn't count.
 
 ## Service worker
 

@@ -128,6 +128,19 @@ can't run at once, so switching pauses the open one after asking. A child on
 two teams is two separate roster entries; linking them wasn't worth the
 complexity.
 
+### Past games are summaries, and a season is a filter
+
+Added 2026-09-14. Finished games used to keep a minutes table keyed by player
+name, dated when **New game** was tapped. The Roster tab's season stats read
+every past game's log, but logs are trimmed after three games, so a fourth game
+made the Roster tab throw. Each game is now a summary keyed by player id and
+dated at kickoff, and all season numbers come from summaries.
+
+The coach chose date filters (all, last 10, last 5) over explicit seasons, and
+chose not to build a playing-time target or a parent summary for now. Share of
+minutes is measured against games attended, so missing a week isn't flagged as
+unfair.
+
 ### No icons
 
 Words, or standard box-score letters — G, A, SOG, YC. An emoji-based pass was
@@ -218,6 +231,9 @@ the log, not stored here.
 | `warnLead` | `30` | Seconds before shift end for the warning beep |
 | `sound` / `vibrate` / `sun` | `false` / `false` / `false` | Shift-end buzzer, shift-end vibration, high-contrast theme |
 | `dragBuzz` | `true` | Short buzz when you press and hold a player to drag |
+| `seasonBalance` | `false` | Move kids who are behind over past games up the auto-fill order |
+| `goalieRotation` | `false` | Advanced: suggest who goes in goal next |
+| `pauseReminder` | `true` | Nudge when the clock stays paused mid-period |
 
 Formations are written **defense-midfield-forward-keeper**, so `3-0-3-1` is
 three at the back, no midfield, three up top, one in goal.
@@ -234,6 +250,9 @@ three at the back, no midfield, three up top, one in goal.
   shiftStart: 0,             // game-elapsed seconds the current shift began
   warned: false, alerted: false,
   adj: { playerId: { BAND: secondsDelta } },   // manual minute corrections
+  id, date, opponent,        // date is set at the first kickoff
+  present: [playerId] | null,  // who was available at kickoff
+  pausedAt, nagged,          // paused-clock reminder
   next: { GK: [id|null], DEF: […], MID: […], FWD: […] } | null }
 ```
 
@@ -285,8 +304,11 @@ Call `invalidate()` after any mutation.
 
 ```
 Lineup   = { id, name, at, size, form, slots: { BAND: [playerId|null] } }   // index = position slot
-Archived = { at, periods, score, totals: [{name, number, GK, DEF, MID, FWD, total, pos}],
-             log }   // full log kept for the 3 most recent games only
+Archived = { id, v: 2, date, at, opponent, periods, endGt, advanced, score, playerSeconds,
+             players: [{ id, name, number, attended, started, shifts,
+                         GK, DEF, MID, FWD, total, pos: { LD: seconds, … },
+                         goals, assists, shots, sog, saves, ga, yellows, reds, gkPeriods }],
+             log }   // full log kept for the 3 most recent games only; up to 100 games
 ```
 
 ---
@@ -306,6 +328,7 @@ Worth reading, because they show the failure modes this codebase actually has.
 | Events at the same second as a shift start were invisible | Test suite | Goal logged, never displayed |
 | A goal opening a shift was treated as the shift's opening group | Test suite | Same, different cause |
 | New component CSS never written (script aborted mid-edit) | Screenshot | Unstyled layout |
+| Season stats read trimmed logs | Code review, 2026-09-14 | Roster tab throws once a team has four past games |
 
 Note the pattern: **none of these threw an exception.** Screenshots and
 invariant checks caught them; reading the code did not, mostly.
@@ -321,7 +344,8 @@ invariant checks caught them; reading the code did not, mostly.
 - **A playing-time target with an on-track indicator.** Genuinely good idea,
   from a competitor. Not built yet.
 - **A "clock is paused" nag.** The most common way this class of app produces
-  wrong numbers is a coach forgetting to restart the clock. Not built yet.
+  wrong numbers is a coach forgetting to restart the clock. Built 2026-09-14 as
+  `pauseReminder`.
 - **Selling it.** The market has a scaled incumbent and a free browser-based
   competitor with the same architecture. Decision was to give it away under MIT
   and see whether it spreads.
