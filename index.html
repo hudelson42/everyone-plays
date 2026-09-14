@@ -820,37 +820,69 @@ function currentArrangement(){
   }
   return out;
 }
-function saveLineup(name){
-  const arr = currentArrangement();
+/* From Field this saves who is on the field. From Next (fromPlan) it saves the plan as it will go
+   on — planned spots plus anyone holding theirs — so the lineup the coach built is what's saved. */
+function saveLineup(name, fromPlan){
+  let arr = null;
+  if(fromPlan){
+    const res = resolvePlan();
+    if(BANDS.some(b => res[b].some(Boolean))){ arr = {}; BANDS.forEach(b => { arr[b] = res[b].slice(); }); }
+  }
+  if(!arr) arr = currentArrangement();
   if(!arr){ toast("Put a lineup on the field or in the plan first"); return false; }
   S.lineups.unshift({id:uid(), name:name, at:Date.now(), size:S.settings.teamSize,
                      form:S.settings.formationIdx, slots:arr});
   S.lineups = S.lineups.slice(0,12);
   save(); return true;
 }
-/* Loading writes into the plan rather than the field, so you always get to look
-   at it before it goes on — and missing players simply leave a gap. */
+/* Loading writes into the plan rather than the field, so you always get to look at it before it
+   goes on. A spot the lineup can't fill — a player who isn't here, has left the roster, or a lineup
+   saved with a gap — used to stay open; now the fairest available player takes it, and the toast
+   says who. Mid-game, a spot someone is already standing in stays theirs, like any empty plan slot. */
 function loadLineup(id){
   const L = S.lineups.find(x => x.id === id); if(!L) return;
   if(L.size !== S.settings.teamSize || L.form !== S.settings.formationIdx){
     S.settings.teamSize = L.size; S.settings.formationIdx = L.form;
   }
   S.game.next = null; S.game.planCleared = false;
-  const n = ensureNext();
-  let placed = 0, skipped = 0;
+  const n = ensureNext(), away = [];
+  let placed = 0;
   BANDS.forEach(b => {
     (L.slots[b] || []).forEach((pid, idx) => {
       if(!pid) return;
       const p = byId(pid);
-      if(!p || !available(p)){ if(p) skipped++; return; }
+      if(!p || !available(p)){ if(p) away.push(first(pid)); return; }
       const i = n[b][idx] === null ? idx : n[b].indexOf(null);
-      if(i < 0){ skipped++; return; }
+      if(i < 0) return;
       n[b][i] = pid; placed++;
     });
   });
+  const filled = fillOpenSpots(), open = openPlanSpots();
   save();
-  toast(placed + " placed" + (skipped ? ", " + skipped + " unavailable or no room" : ""));
+  const parts = [placed+" from the lineup"];
+  if(away.length) parts.push(away.join(", ")+(away.length === 1 ? " isn't" : " aren't")+" available");
+  if(filled.length) parts.push(filled.slice(0, 2).map(f => f.who+" in at "+f.at).join(", ")+(filled.length > 2 ? " and "+(filled.length-2)+" more" : ""));
+  if(open) parts.push(open+(open === 1 ? " spot" : " spots")+" still open, nobody else available");
+  toast(parts.join(" · "));
 }
+/* Plan spots that would go on empty (nothing planned, nobody standing there) get the fairest
+   available player not already in the lineup: eligible for that band first, then fewest minutes. */
+function fillOpenSpots(){
+  const st = compute(), n = ensureNext(), res = resolvePlan(), used = {}, owed = seasonOwed(), filled = [];
+  BANDS.forEach(b => res[b].forEach(id => { if(id) used[id] = 1; }));
+  BANDS.forEach(b => res[b].forEach((id, i) => {
+    if(id) return;
+    const pick = S.roster.filter(p => available(p) && !used[p.id]).sort((a, c) =>
+      (eligible(c, b) - eligible(a, b)) ||
+      ((st[a.id].total - (owed[a.id]||0)) - (st[c.id].total - (owed[c.id]||0))) ||
+      ((parseInt(a.number)||99) - (parseInt(c.number)||99)))[0];
+    if(!pick) return;
+    n[b][i] = pick.id; used[pick.id] = 1;
+    filled.push({who:first(pick.id), at:posName(slotPos(b, i)) || BANDNAME[b]});
+  }));
+  return filled;
+}
+function openPlanSpots(){ const res = resolvePlan(); return BANDS.reduce((a, b) => a + res[b].filter(x => !x).length, 0); }
 
 /* ---------------- pre-game check-in ---------------- */
 let checkIn = null;
@@ -1668,7 +1700,7 @@ function renderNext(){
     modal("Save this lineup", '<div class="muted" style="margin-bottom:6px">Reuse it next Saturday instead of building it again.</div>'+
       '<input type="text" id="lu-name" placeholder="Starting XI, second half, tournament…">', "Save", ()=>{
       const v = (document.getElementById("lu-name").value || "").trim() || "Lineup "+(S.lineups.length+1);
-      if(saveLineup(v) === false) return false;
+      if(saveLineup(v, true) === false) return false;
       render(); toast("Saved “"+v+"”");
     });
     setTimeout(()=>{ const el=document.getElementById("lu-name"); if(el) el.focus(); }, 60);
@@ -2410,7 +2442,7 @@ function renderHelp(){
       q("Before the game starts",
         "Tap <b>Who is here?</b> and knock out anyone who didn't show. They drop out of the rotation until you put them back.<br><br>Then <b>Load a lineup</b> if you saved one — you build your starting eleven once and reuse it every Saturday.")+
       q("How do I save a lineup?",
-        "Get the team arranged the way you want, either on the field or on the <b>Next</b> tab, then tap <b>Save</b> there and give it a name. Loading one puts it into the plan, so you get to look it over before anyone runs on.")+
+        "Get the team arranged the way you want, either on the field or on the <b>Next</b> tab, then tap <b>Save</b> there and give it a name. Loading one puts it into the plan, so you get to look it over before anyone runs on. If someone in it isn't here, the fairest available player takes their spot, and the app tells you who.")+
       q("I credited the wrong player.",
         "On <b>History</b>, tap the event itself — not the ×. You get a list of who was on the field at that moment, nearest the top. Tap the right name and the clock time stays as it was. Notes can be edited the same way.")+
       q("Where are past games?",

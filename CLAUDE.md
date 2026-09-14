@@ -112,6 +112,13 @@ begins it. It doesn't switch tabs on its own; the Field and Next tabs say what's
 happening. Only the last period sets `periodOver`, and START then offers a new
 game. Coaches used to have to find the Clock tab to start period 2.
 
+**A loaded lineup never leaves a spot open if someone can fill it.**
+`loadLineup()` places saved players first. `fillOpenSpots()` then gives any spot
+that would go on empty (nothing planned, nobody standing there) to the fairest
+available player, and the toast names them. Save on the Next tab saves the plan
+(`saveLineup(name, true)` uses `resolvePlan()`); Save from the field saves the
+field.
+
 **Six tabs.** Field, Next, Minutes, History, Roster, Setup. The clock screen
 opens from the clock in the top bar, and Help from Setup; both are views with a
 Back link, not tabs. Eight tabs made the labels too small to hit outdoors.

@@ -399,7 +399,41 @@ def main():
           invalidate(); loadLineup(S.lineups[0].id); }""")
         placed = pg.evaluate("nextCount()")
         absent = pg.evaluate("!Object.values(S.game.next).flat().includes('p2')")
-        check("an absent player is skipped on load", placed == 6 and absent, f"{placed} placed")
+        msg = pg.evaluate("document.querySelector('.toast').textContent")
+        check("an absent player's spot is filled, not left open",
+              placed == 7 and absent and "in at" in msg and "isn't available" in msg, f"{placed} placed; {msg}")
+
+        more = pg.evaluate("""(() => {
+          const full = S.roster.slice(), L = S.lineups[0], r = {};
+          byId('p2').avail = 'available';
+          S.roster = full.filter(p => p.id !== 'p4'); invalidate(); S.game.next = null; loadLineup(L.id);
+          r.removed = nextCount();
+          S.roster = full; invalidate();
+          const gapSlots = {}; Object.keys(L.slots).forEach(b => { gapSlots[b] = L.slots[b].map((x, i) => (b === 'DEF' && i === 1) ? null : x); });
+          S.lineups.unshift({ id: 'gap', name: 'gap', at: Date.now(), size: L.size, form: L.form, slots: gapSlots });
+          S.game.next = null; loadLineup('gap'); r.gap = nextCount(); S.lineups.shift();
+          S.roster = full.slice(0, 7); byId('p0').avail = 'out'; invalidate(); S.game.next = null; loadLineup(L.id);
+          r.noOne = { count: nextCount(), msg: document.querySelector('.toast').textContent };
+          byId('p0').avail = 'available'; S.roster = full; invalidate(); S.game.next = null;
+          return r; })()""")
+        check("a player removed from the roster is replaced on load", more["removed"] == 7, str(more))
+        check("a lineup saved with a gap loads full", more["gap"] == 7, str(more))
+        check("when nobody is left to fill a spot, it says so",
+              more["noOne"]["count"] == 6 and "still open" in more["noOne"]["msg"], str(more["noOne"]))
+
+        nextsave = pg.evaluate("""(() => {
+          S.game = newGame(); invalidate();
+          const spots = []; BANDS.forEach(b => { for (let i = 0; i < slotsFor(b); i++) spots.push([b, i]); });
+          S.game.seq++;
+          spots.forEach(([b, j], i) => S.game.log.push({ eid: uid(), g: 1, t: Date.now(), gt: 0, sh: 1, period: 1,
+            type: 'ON', playerId: 'p' + i, band: b, pos: slotPos(b, j) }));
+          invalidate(); S.game.base = 300; S.game.next = null; ensureNext(); planInto('p9', 'FWD', 0);
+          saveLineup('from next', true);
+          const slots = Object.values(S.lineups[0].slots).flat();
+          const r = { planned: slots.includes('p9'), replaced: slots.includes('p4'), count: slots.filter(Boolean).length };
+          S.lineups.shift(); S.game = newGame(); invalidate(); return r; })()""")
+        check("Save on the Next tab saves the plan, not the field",
+              nextsave["planned"] and not nextsave["replaced"] and nextsave["count"] == 7, str(nextsave))
 
         pg.evaluate("""() => { S.roster.forEach(p => p.avail = 'available');
           openCheckIn(); }""")
