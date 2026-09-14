@@ -1,6 +1,6 @@
 {
-  "name": "Sideline — shift tracker",
-  "short_name": "Sideline",
+  "name": "Everyone Plays — playing time tracker",
+  "short_name": "Everyone Plays",
   "description": "Substitution and playing-time tracker for youth soccer coaches. Works offline, keeps everything on your phone.",
   "start_url": ".",
   "scope": ".",

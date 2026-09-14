@@ -1,15 +1,15 @@
-# Sideline
+# Everyone Plays
 
 A substitution and shift tracker for youth soccer coaches. One HTML file, no
 account, no signal required.
 
-**Use it here:** https://hudelson42.github.io/sideline/
+**Use it here:** https://hudelson42.github.io/everyone-plays/
 
 Add it to your home screen and it opens like an app.
 
 ## What it does
 
-Sideline keeps track of who is on the field and how long each player has been
+Everyone Plays keeps track of who is on the field and how long each player has been
 out there, so playing time comes out even without you keeping a tally in your
 head while nine kids ask you when they're going on.
 
@@ -82,7 +82,7 @@ Before shipping a change:
 
 ```bash
 pip install playwright && playwright install chromium
-python3 tests/test_sideline.py
+python3 tests/test_everyone_plays.py
 ```
 
 When you change `index.html`, bump `CACHE` in `sw.js` in the same commit, or

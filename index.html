@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0E1513">
-<title>Sideline — shift tracker</title>
+<title>Everyone Plays — playing time tracker</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="favicon-32.png" sizes="32x32">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Sideline">
+<meta name="apple-mobile-web-app-title" content="Everyone Plays">
 <meta name="description" content="Substitution and playing-time tracker for youth soccer coaches. Works offline, keeps everything on your phone.">
 <style>
 :root{
@@ -351,7 +351,7 @@ body.sun .prow .avn{color:#fff;border:1px solid #000}
 <script>
 "use strict";
 /* ============================================================
-   Sideline — soccer substitution & shift tracker
+   Everyone Plays — soccer substitution & shift tracker
    ============================================================ */
 
 const BANDS = ["GK","DEF","MID","FWD"];
@@ -391,6 +391,8 @@ function posCodes(band, n){
 function posName(code){ return !code ? "" : POSNAME[code] || (BANDNAME[code.replace(/\d+$/,"")] || code) + " " + code.replace(/^\D+/,""); }
 function slotPos(band, i){ return posCodes(band, slotsFor(band))[i] || null; }
 
+/* Storage keys predate the rename from Sideline to Everyone Plays. Never rename them — every
+   existing roster, game and team would silently disappear. */
 const KEY = "sideline-tracker-v1";     /* the first team's data, where the app has always kept it */
 const INDEX_KEY = "sideline-teams-v1";
 /* sun mode, sound and vibration belong to the phone and the coach, not to a team */
@@ -1949,7 +1951,7 @@ function summaryCSV(){
   return "Name,Number,GK,Defense,Midfield,Forward,Total,Positions\n" + S.roster.map(p => { const r = st[p.id]; return '"'+p.name.replace(/"/g,'""')+'",'+(p.number||"")+","+mins(r.GK)+","+mins(r.DEF)+","+mins(r.MID)+","+mins(r.FWD)+","+mins(r.total)+',"'+posSummary(r, "; ")+'"'; }).join("\n");
 }
 function stamp(){ const d = new Date(), pad = n => String(n).padStart(2,"0"); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes()); }
-function backupName(){ return "sideline-backup-"+stamp()+".json"; }
+function backupName(){ return "everyone-plays-backup-"+stamp()+".json"; }
 function saveFile(name, text, mime){
   try{ const blob = new Blob([text], {type:mime}), url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = name; a.style.display = "none"; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 4000); toast("Saved "+name); }
   catch(e){ toast("Browser blocked download — use Copy as text instead"); }
@@ -2341,7 +2343,7 @@ function renderSetup(){
     '<div class="card"><h2>Alerts and display</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz when you press and hold a player",s.dragBuzz!==false)+toggleRow("s-pause","Remind me if the clock stays paused mid-game",s.pauseReminder!==false)+toggleRow("s-confirm","Confirm changes made by tapping",s.confirmChanges!==false)+toggleRow("s-auto","Keep the next shift ready automatically",s.autoPlan!==false)+toggleRow("s-rot","Rotate players between defense and attack",s.rotate)+toggleRow("s-fresh","Put subs in positions they haven't played",s.freshPositions!==false)+toggleRow("s-seasonbal","Even out playing time across past games",!!s.seasonBalance)+switchField(s.maxSwitch)+'<div class="adv-only">'+toggleRow("s-yc","Yellow card sends the player to a sin bin",!!s.ycSinBin)+toggleRow("s-gk","Suggest who goes in goal next",!!s.goalieRotation)+'</div>'+toggleRow("s-sun","Sun mode — maximum contrast",s.sun)+'<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
     '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone, and includes every team.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
     '<div class="card"><h2>About this app</h2><div class="muted" style="line-height:1.5">'+
-      'Sideline tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
+      'Everyone Plays tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
       'Everything is worked out from a log of substitutions, so the minutes are always consistent with what actually happened. Nothing leaves your phone and nothing needs a signal — it works in airplane mode.<br><br>'+
       'A few things worth knowing: goalie minutes count toward a player\'s total; an empty spot in a planned shift means whoever is there now stays; and the backup file on this page is the only copy that survives clearing your browser data.'+
     '</div><div class="row" style="margin-top:10px"><button class="btn ghost" id="s-help">Open Help</button></div></div>';
@@ -2372,7 +2374,7 @@ function renderSetup(){
   document.getElementById("s-help").addEventListener("click", ()=>{ activeTab = "help"; render(); });
   document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));
   document.getElementById("s-dl").addEventListener("click", ()=>buildBackup().then(text => saveFile(backupName(), text, "application/json")));
-  const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(), text, "application/json", "Sideline backup")));
+  const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(), text, "application/json", "Everyone Plays backup")));
   const fi = document.getElementById("s-file"); document.getElementById("s-open").addEventListener("click", ()=>fi.click());
   fi.addEventListener("change", ()=>{ const f = fi.files && fi.files[0]; fi.value = ""; if(!f) return; const fr = new FileReader(); fr.onload = () => loadBackup(fr.result); fr.onerror = () => toast("Couldn't read that file"); fr.readAsText(f); });
   document.getElementById("s-exp").addEventListener("click", ()=>buildBackup().then(copyOut));

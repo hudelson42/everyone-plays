@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Sideline test suite.
+Everyone Plays test suite.
 
     pip install playwright && playwright install chromium
-    python3 tests/test_sideline.py
+    python3 tests/test_everyone_plays.py
 
 Drives a real headless Chromium against index.html. Most of what can go wrong
 in this app goes wrong silently — the numbers drift, nothing throws — so these

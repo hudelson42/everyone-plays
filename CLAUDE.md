@@ -1,4 +1,9 @@
-# Sideline — project notes
+# Everyone Plays — project notes
+
+Formerly called Sideline. Internal names still use `sideline` on purpose: the
+storage keys (`sideline-tracker-v1`, `sideline-teams-v1`, `sideline-team-*`),
+the service worker cache, and the `sideline: "backup"` marker in backup files.
+Renaming the storage keys would strand every existing save. Leave them alone.
 
 A substitution and playing-time tracker for youth soccer coaches. Single-page
 app, no build step, no dependencies, no server, no accounts.
@@ -169,7 +174,7 @@ swapping out mid-game.
 
 ```bash
 pip install playwright && playwright install chromium
-python3 tests/test_sideline.py
+python3 tests/test_everyone_plays.py
 ```
 
 The suite drives a real headless Chromium at 390×844. It covers time

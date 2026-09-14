@@ -1,4 +1,4 @@
-# Sideline — how this got here
+# Everyone Plays — how this got here
 
 Context for anyone picking the project up, human or model. `CLAUDE.md` says
 what the rules are; this says where they came from and what the data looks
@@ -140,6 +140,21 @@ The coach chose date filters (all, last 10, last 5) over explicit seasons, and
 chose not to build a playing-time target or a parent summary for now. Share of
 minutes is measured against games attended, so missing a week isn't flagged as
 unfair.
+
+### The name
+
+Renamed from Sideline to Everyone Plays on 2026-09-14, before the project was
+promoted anywhere. "Sideline" was crowded in exactly this space:
+- TEAM SIDELINE is a registered mark for sports league software.
+- Pinger holds SIDELINE registrations for its second-phone-number app.
+- Sideline Pro is an App Store app doing nearly the same job, live since May 2025.
+
+"Put Me In Coach" was considered and dropped. It's a line from John Fogerty's
+"Centerfield", he has filed trademarks on that lyric, and several youth-sports
+businesses already use the phrase. "Everyone Plays" turned up no app or brand
+in a web search. That isn't a full trademark clearance.
+
+Storage keys, the cache name and the backup marker still say `sideline`.
 
 ### No icons
 
