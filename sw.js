@@ -1,7 +1,7 @@
 /* Sideline service worker.
    Bump CACHE when you upload a new index.html — that's what tells installed
    phones to pick the new version up. */
-const CACHE = "sideline-v1";
+const CACHE = "sideline-v2";
 const SHELL = [
   "./",
   "./index.html",

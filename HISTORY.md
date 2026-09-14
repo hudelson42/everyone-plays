@@ -166,9 +166,9 @@ the log, not stored here.
 | `teamSize` | `7` | Players on the field **including** the keeper |
 | `formationIdx` | `0` | Index into `FORMATIONS[teamSize]`; 7v7 default is 3-0-3-1 |
 | `periods` / `periodLen` | `2` / `25` | Count and minutes |
-| `shiftLen` | `6` | Minutes between rotations |
+| `shiftLen` | `5` | Minutes between rotations |
 | `minStint` | `90` | Seconds a player must be on before auto-fill will pull them |
-| `maxSwitch` | `2` | Most players who may change position in one shift |
+| `maxSwitch` | `6` | Most players who may change position in one shift |
 | `rotate` | `true` | Prefer moving players between defense and attack |
 | `autoPlan` | `true` | Keep the next shift prepared in the background |
 | `confirmChanges` | `true` | Confirm tap-initiated changes (drag is never confirmed) |
@@ -176,7 +176,7 @@ the log, not stored here.
 | `sinBinMins` | `5` | Sin bin duration |
 | `staleWarn` | `10` | Minutes on the bench before a player is flagged |
 | `warnLead` | `30` | Seconds before shift end for the warning beep |
-| `sound` / `vibrate` / `sun` | `true` / `true` / `false` | Alerts and high-contrast theme |
+| `sound` / `vibrate` / `sun` | `false` / `false` / `false` | Alerts and high-contrast theme |
 
 Formations are written **defense-midfield-forward-keeper**, so `3-0-3-1` is
 three at the back, no midfield, three up top, one in goal.

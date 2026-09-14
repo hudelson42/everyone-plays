@@ -70,7 +70,7 @@ player mysteriously benched the following week.
 least" produced *1 on, 1 off, 5 switched* every shift — seven kids being told
 new positions every ninety seconds. Current algorithm: pick the squad by
 minutes, hold everyone already on the field in the position they're standing
-in, then apply at most `maxSwitch` (default 2) deliberate front-to-back swaps.
+in, then apply at most `maxSwitch` (default 6; was 2) deliberate front-to-back swaps.
 Equalization is unaffected — a simulated 50-minute game still lands every
 outfield player on exactly 25.0 minutes.
 
