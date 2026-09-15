@@ -244,7 +244,7 @@ the log, not stored here.
 | `rotate` | `true` | Prefer moving players between defense and attack |
 | `rotateKeeper` | `true` | Switch the goalie each shift; off holds the keeper in goal |
 | `freshPositions` | `true` | Put incoming players in the open positions they've played least |
-| `autoPlan` | `true` | Keep the next shift prepared in the background |
+| `autoPlan` | `false` | Keep the next shift prepared in the background (default changed to off 2026-09-14) |
 | `confirmChanges` | `true` | Confirm tap-initiated changes (drag is never confirmed) |
 | `ycSinBin` | `false` | Whether a yellow card removes the player temporarily |
 | `sinBinMins` | `5` | Sin bin duration |

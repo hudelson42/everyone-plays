@@ -60,7 +60,9 @@ the only copy that survives.
 2. **Setup** — pick your format. It ships set to 7 v 7.
 3. **Field** — tap an open position, then tap the player who goes there.
 4. **START** — top left, runs the clock.
-5. When the buzzer goes, tap **Send them on**.
+5. When the buzzer goes, tap **Plan next shift**, check it, then **Send them on**.
+   The green **Field** tab is what's live; the amber **Next** tab is the plan.
+6. Not sure what a setting does? Tap the **?** next to it.
 
 **How it works**, at the top of Setup, covers the rest. Tap the clock at the top
 for period controls, notes and New game.

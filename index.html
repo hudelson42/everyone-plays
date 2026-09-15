@@ -101,7 +101,25 @@ body.sun .btn.primary{color:#fff}
 .row>*{flex:1}
 .muted{color:var(--ink-dim);font-size:12px}
 label.field{display:block;margin-bottom:10px}
-label.field span{display:block;font-size:11px;color:var(--ink-dim);margin-bottom:4px}
+label.field span{display:flex;align-items:center;gap:2px;font-size:11px;color:var(--ink-dim);margin-bottom:4px}
+/* "?" beside each setting, and the floating explanation it opens */
+.tipbtn{position:relative;flex:none;width:26px;height:26px;margin-left:6px;border-radius:50%;border:1px solid var(--line);
+  color:var(--ink-dim);font-size:13px;font-weight:700;line-height:1}
+.tipbtn::after{content:"";position:absolute;inset:-9px} /* a 44 px target around a small circle */
+.tipbtn.open{border-color:var(--next);color:var(--next)}
+#tipbubble{position:fixed;z-index:110;max-width:min(300px,calc(100vw - 24px));padding:10px 12px;border-radius:var(--r);
+  background:var(--panel2);border:1px solid var(--next);font-size:13px;line-height:1.45;color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.45)}
+body.sun #tipbubble{background:#fff;color:#000;border-color:#000}
+/* which screen am I on: Field is live, Next is a plan */
+.modestrip{display:flex;align-items:baseline;gap:8px;margin:-4px 0 10px;padding:6px 10px;border-radius:var(--r);font-size:12px}
+.modestrip b{font-size:11px;letter-spacing:.08em}
+.modestrip.live{background:rgba(62,207,142,.12);color:var(--on);border:1px solid var(--on)}
+.modestrip.plan{background:rgba(242,179,61,.12);color:var(--next);border:1px dashed var(--next)}
+body.sun .modestrip.live,body.sun .modestrip.plan{background:#fff}
+#v-field #pitch{border:2px solid var(--on)}
+#v-next #pitch{border:2px dashed var(--next);background-image:repeating-linear-gradient(135deg,rgba(242,179,61,.08) 0 14px,transparent 14px 28px)}
+nav#tabs button.active{box-shadow:inset 0 3px 0 var(--on)}
+nav#tabs button.active[data-tab="next"]{color:var(--next);box-shadow:inset 0 3px 0 var(--next)}
 input[type=text],input[type=number],select,textarea{
   width:100%;min-height:var(--tap);padding:8px 10px;border-radius:var(--r);
   border:1px solid var(--line);background:var(--panel2);
@@ -447,7 +465,7 @@ const DEFAULTS = {
   settings:{
     advanced:false, teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:5,
     minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:null /* no limit */, rotate:true, freshPositions:true,
-    confirmChanges:true, autoPlan:true, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
+    confirmChanges:true, autoPlan:false, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
     seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true, rotateKeeper:true
   },
   game:newGame(), archive:[], lineups:[]
@@ -1412,7 +1430,7 @@ function renderField(){
   const onCt = diff.filter(e=>e.type==="ON").length, offCt = diff.filter(e=>e.type==="OFF").length, mvCt = diff.filter(e=>e.type==="MOVE").length;
   const banner = changes
     ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>Next shift is ready</b> <span class="muted">· '+onCt+' on · '+offCt+' off'+(mvCt?' · '+mvCt+' switching':'')+'</span><div class="row" style="margin-top:8px"><button class="btn primary" id="send-next">Send them on</button><button class="btn ghost" id="edit-next">Edit plan</button></div></div>'
-    : '<div class="row" style="margin-bottom:10px"><button class="btn primary" id="plan-next">Plan next shift</button></div>';
+    : '<div class="row" style="margin-bottom:10px"><button class="btn primary" id="plan-next">'+(S.game.log.length ? "Plan next shift" : "Pick a starting lineup")+'</button></div>';
 
   /* between periods and after the whistle, say what happens next right here */
   const periodCard = S.game.onBreak && S.game.log.length
@@ -1450,6 +1468,7 @@ function renderField(){
 
   document.getElementById("v-field").innerHTML =
     /* while a player is selected the cards above the field step aside, so field and bar both fit */
+    '<div class="modestrip live"><b>ON THE FIELD NOW</b> live</div>' +
     (selected ? '' : teamBar("f-team") + periodCard + supportCard() + banner + preBar + upStrip) + pitch + '<h3>Bench</h3>' + benchHTML +
     (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap a spot then a player, or two players to swap. Press and hold to drag. Changes here count as mid-shift swaps.</div>') +
     '<div class="row" style="margin:10px 0"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div>';
@@ -1487,7 +1506,9 @@ function renderField(){
   const fn = document.getElementById("f-newgame"); if(fn) fn.addEventListener("click", promptNewGame);
   const ci = document.getElementById("f-checkin"); if(ci) ci.addEventListener("click", openCheckIn);
   const fl = document.getElementById("f-lineup"); if(fl) fl.addEventListener("click", openLineups);
-  const goNext = document.getElementById("plan-next"); if(goNext) goNext.addEventListener("click", ()=>{ activeTab = "next"; render(); });
+  /* with Keep next shift ready off (the default), this is how a plan gets made: build it, then show it */
+  const goNext = document.getElementById("plan-next");
+  if(goNext) goNext.addEventListener("click", ()=>{ activeTab = lastTab = "next"; if(!nextCount()){ S.game.planCleared = false; autoFillNext(); } render(); document.querySelector("main").scrollTop = 0; });
   const ed = document.getElementById("edit-next"); if(ed) ed.addEventListener("click", ()=>{ activeTab = "next"; render(); });
   const sn = document.getElementById("send-next"); if(sn) sn.addEventListener("click", sendNextShift);
   document.getElementById("reset-shift").addEventListener("click", ()=>{ beginNewShift(); save(); render(); toast("Shift "+S.game.shift+" started"); });
@@ -1736,6 +1757,7 @@ function renderNext(){
     '<div class="row" style="margin-top:8px"><button class="btn" id="n-gk">Put '+esc(first(gkList[0].p.id))+' in goal</button><button class="btn ghost" id="n-gklist">See everyone</button></div></div>' : '';
   const summary = placed ? comingOn+" on · "+comingOff+" off"+(moving?" · "+moving+" switching spots":"") : "Nothing planned yet. Auto-fill it, or drag players into the spots you want to change.";
   document.getElementById("v-next").innerHTML =
+    '<div class="modestrip plan"><b>PLANNING NEXT SHIFT</b> not live yet</div>'+
     '<div class="card" style="margin-bottom:10px">'+(S.game.onBreak ? '<div class="muted" style="margin-bottom:6px">Setting up period '+S.game.period+'. Send them on, then tap START when play begins.</div>' : '')+'<b>Shift '+upcomingShift()+'</b> <span class="muted">· '+summary+'</span>'+
     '<div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn primary" id="n-send"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes")+'</button></div>'+
     '<div class="row" style="margin-top:6px"><button class="btn ghost" id="n-load">Load</button><button class="btn ghost" id="n-save"'+(placed?"":" disabled")+'>Save</button><button class="btn ghost" id="n-clear"'+(placed?"":" disabled")+'>Clear</button></div></div>'+
@@ -2495,7 +2517,7 @@ function renderHelp(){
       '<div class="startrow"><b>1</b><div>Add players on <b>Roster</b>.</div></div>'+
       '<div class="startrow"><b>2</b><div>On <b>Field</b>, tap an open spot then tap a player. Repeat until the field is full.</div></div>'+
       '<div class="startrow"><b>3</b><div>Tap <b>START</b> at the top left to run the clock. Tap the clock itself for period controls, notes and <b>New game</b>.</div></div>'+
-      '<div class="startrow"><b>4</b><div>When the buzzer goes, tap <b>Send them on</b>.</div></div>'+
+      '<div class="startrow"><b>4</b><div>When the buzzer goes, tap <b>Plan next shift</b>, check it, then <b>Send them on</b>. Field is what is live; Next is the plan.</div></div>'+
     '</div>'+
     '<div class="card">'+
       q("What is the difference between Field and Next?",
@@ -2503,7 +2525,7 @@ function renderHelp(){
       q("How do I move players around?",
         "Every spot on the field is a specific position — left D, sweeper, striker and so on. Tap a player, then tap exactly where they should go: another player to trade spots, or an open position. You will be asked to confirm.<br><br>Or press and hold a player and drag them onto the spot. Dragging takes effect straight away, with no confirmation.")+
       q("Who picks the next shift?",
-        "The app keeps one ready for you, built around who will have played least by the end of the current shift, so even at kickoff the plan brings on the bench. The goalie changes each shift too; turn off <b>Switch goalie each shift</b> on Setup to keep your keeper in goal. Everyone already on the field stays in the position they are standing in unless swapping ends evens out their time.<br><br>Players coming on go to the open positions they have spent the least time in, so over a game kids try spots they haven't played. Turn off <b>Try new positions</b> on Setup to even out only defense, midfield and attack.<br><br>Change anything you like on the Next tab before you send it.")+
+        "Tap <b>Plan next shift</b> on Field, or <b>Auto-fill</b> on Next, and the app builds one around who will have played least by the end of the current shift, so even at kickoff it brings on the bench. Turn on <b>Keep next shift ready</b> on Setup to have it built for you in the background. The goalie changes each shift too; turn off <b>Switch goalie each shift</b> on Setup to keep your keeper in goal. Everyone already on the field stays in the position they are standing in unless swapping ends evens out their time.<br><br>Players coming on go to the open positions they have spent the least time in, so over a game kids try spots they haven't played. Turn off <b>Try new positions</b> on Setup to even out only defense, midfield and attack.<br><br>Change anything you like on the Next tab before you send it.")+
       q("What does a faded player mean?",
         "On the <b>Next</b> tab, faded means they are holding that spot. Leave a spot alone and nobody there changes — so you can swap two players and leave the rest of the team alone.")+
       q("Before the game starts",
@@ -2538,8 +2560,8 @@ function renderSetup(){
   document.getElementById("v-setup").innerHTML =
     '<div class="row" style="margin-bottom:10px"><button class="btn" id="s-help-top">How it works</button></div>'+
     '<div class="card"><h2>Teams</h2><div class="muted" style="margin-bottom:8px">This is <b>'+esc(activeTeam().name)+'</b>'+(TEAMS.list.length > 1 ? ', one of '+TEAMS.list.length+' teams' : '')+'. Each team keeps its own roster, settings, minutes and history. Sun mode, sound and vibration are the same for every team.</div><div class="row"><button class="btn" id="t-switch">'+(TEAMS.list.length > 1 ? "Switch or add" : "Add a team")+'</button><button class="btn ghost" id="t-rename">Rename</button></div>'+(TEAMS.list.length > 1 ? '<button class="btn warn wide" id="t-delete" style="margin-top:8px">Delete this team</button>' : '')+'</div>'+
-    '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b><div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
-    '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
+    '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b>'+tipBtn("adv")+'<div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
+    '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side'+tipBtn("s-size")+'</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper'+tipBtn("s-form")+'</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
     '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
     '<div class="card"><h2>Alerts</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+
       (canVibrate()
@@ -2663,19 +2685,82 @@ function describeFormation(){
   return parts.join(" · ") + " = " + ((f.gk?1:0)+f.d+f.m+f.f) + " on the field.";
 }
 function switchField(v){
-  return '<label class="field"><span>Position changes per shift</span><select id="s-switch">'+
+  return '<label class="field"><span>Position changes per shift'+tipBtn("s-switch")+'</span><select id="s-switch">'+
     '<option value=""'+(v == null ? " selected" : "")+'>No limit</option>'+
     [0,1,2,3,4,5,6,7,8,9,10].map(k => '<option value="'+k+'"'+(v === k ? " selected" : "")+'>'+k+'</option>').join("")+'</select></label>';
 }
-function numField(id,label,val,min,max,step){ return '<label class="field"><span>'+label+'</span><input type="number" id="'+id+'" value="'+val+'" min="'+min+'" max="'+max+'" step="'+step+'" inputmode="numeric"></label>'; }
+/* Setting explanations. A "?" beside each setting opens a floating note: tap on a phone, hover with a
+   mouse. One at a time; it closes on the next tap, a scroll, or a re-render. */
+const TIPS = {
+  "adv": "Adds formations, goals, assists, shots, cards, opponent scoring and season stats. Leave it off for a simpler app.",
+  "s-size": "How many players each team has on the field at once, including the goalie.",
+  "s-form": "How your team lines up: how many defenders, midfielders and forwards, plus the goalie. It sets which positions appear on the field.",
+  "s-periods": "How many halves or quarters in a game.",
+  "s-plen": "The length of each period. The clock stops on its own when it gets there.",
+  "s-slen": "How often you rotate players. The shift clock at the top counts down from this.",
+  "s-warn": "A short beep this many seconds before a shift ends, so you can get the next group ready. 0 turns it off.",
+  "s-min": "Auto-fill won't take a player off until they've been on at least this long, so nobody is pulled right after going in.",
+  "s-stale": "Flags a player who has sat on the bench this long, so nobody gets forgotten.",
+  "s-sin": "How long a yellow card keeps a player off, when Yellow card sin bin is on.",
+  "s-sound": "Plays a buzzer when the shift clock reaches zero. Turn your phone's volume up.",
+  "s-vib": "Vibrates the phone when a shift ends and a short buzz before it.",
+  "s-dragbuzz": "A short buzz when you press and hold a player to drag them, so you know the drag has started.",
+  "s-pause": "If the clock stays paused for two minutes mid-period with players on the field, the app beeps once and START flashes.",
+  "s-auto": "Builds the next shift for you in the background, so Send them on is ready when the buzzer goes. When it's off, tap Plan next shift on Field or Auto-fill on Next whenever you want one.",
+  "s-keeper": "Puts a new goalie in each shift: whoever has spent the least time in goal. Off keeps your keeper in goal until you move them.",
+  "s-rot": "Lets auto-fill trade a defender and a forward when that evens out how long each has played at each end.",
+  "s-fresh": "Players coming on go to the positions they've played least, so kids try new spots. Off evens out only defense, midfield and attack.",
+  "s-seasonbal": "Gives a little extra time to kids who got less in past games, at most about one extra shift a game.",
+  "s-switch": "The most players auto-fill will move between defense and attack in one shift. No limit lets it move as many as it takes.",
+  "s-gk": "Shows who has spent the fewest periods in goal on the Next tab, with a button to put them in.",
+  "s-yc": "A yellow card takes the player off for the sin bin time, and the app tells you when they can come back.",
+  "s-confirm": "Asks before making a change you started by tapping. Dragging never asks, because a drag is hard to do by accident.",
+  "s-sun": "High-contrast black on white, for bright sunlight.",
+  "s-support": "Now and then after you file a game, a short note with a link to support the app. Never during a game."
+};
+function tipBtn(key){ return TIPS[key] ? '<button type="button" class="tipbtn" data-tip="'+key+'" aria-label="What does this setting do?">?</button>' : ''; }
+let tipOpen = null;
+function hideTip(){
+  const b = document.getElementById("tipbubble"); if(b) b.hidden = true;
+  if(tipOpen){ tipOpen.classList.remove("open"); tipOpen = null; }
+}
+function showTip(btn){
+  hideTip();
+  let b = document.getElementById("tipbubble");
+  if(!b){ b = document.createElement("div"); b.id = "tipbubble"; b.setAttribute("role", "tooltip"); document.body.appendChild(b); }
+  b.textContent = TIPS[btn.dataset.tip] || ""; b.hidden = false;
+  tipOpen = btn; btn.classList.add("open");
+  const r = btn.getBoundingClientRect(), w = b.offsetWidth, h = b.offsetHeight;
+  const below = r.bottom + 8 + h < window.innerHeight - 64;
+  b.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width/2 - w/2)) + "px";
+  b.style.top = (below ? r.bottom + 8 : Math.max(8, r.top - h - 8)) + "px";
+}
+/* capture phase, so a "?" inside a <label> doesn't also focus that label's input */
+document.addEventListener("click", e => {
+  const btn = e.target.closest && e.target.closest(".tipbtn");
+  if(btn){ e.preventDefault(); e.stopPropagation(); if(tipOpen === btn) hideTip(); else showTip(btn); return; }
+  if(tipOpen) hideTip();
+}, true);
+document.addEventListener("pointerover", e => {
+  if(e.pointerType !== "mouse") return;
+  const btn = e.target.closest && e.target.closest(".tipbtn"); if(btn && tipOpen !== btn) showTip(btn);
+});
+document.addEventListener("pointerout", e => {
+  if(e.pointerType !== "mouse") return;
+  const btn = e.target.closest && e.target.closest(".tipbtn");
+  if(btn && tipOpen === btn && !btn.contains(e.relatedTarget)) hideTip();
+});
+document.querySelector("main").addEventListener("scroll", hideTip, {passive:true});
+function numField(id,label,val,min,max,step){ return '<label class="field"><span>'+label+tipBtn(id)+'</span><input type="number" id="'+id+'" value="'+val+'" min="'+min+'" max="'+max+'" step="'+step+'" inputmode="numeric"></label>'; }
 function bindNum(id, set){ const el = document.getElementById(id); if(!el) return; el.addEventListener("change", ()=>{ let v = parseFloat(el.value); const min = parseFloat(el.min), max = parseFloat(el.max); if(isNaN(v)) v = min; v = Math.max(min, Math.min(max, v)); el.value = v; set(v); save(); paintClocks(); }); }
-function toggleRow(id,label,on){ return '<div class="row" style="align-items:center;margin-bottom:8px"><div style="flex:2;font-size:14px">'+label+'</div><div class="seg" style="flex:1;max-width:150px"><button data-tog="'+id+'" data-v="1" class="'+(on?"on":"")+'">On</button><button data-tog="'+id+'" data-v="0" class="'+(on?"":"on")+'">Off</button></div></div>'; }
+function toggleRow(id,label,on){ return '<div class="row" style="align-items:center;margin-bottom:8px"><div style="flex:2;font-size:14px;display:flex;align-items:center;gap:2px">'+label+tipBtn(id)+'</div><div class="seg" style="flex:1;max-width:150px"><button data-tog="'+id+'" data-v="1" class="'+(on?"on":"")+'">On</button><button data-tog="'+id+'" data-v="0" class="'+(on?"":"on")+'">Off</button></div></div>'; }
 function bindTog(id, set){ document.querySelectorAll('[data-tog="'+id+'"]').forEach(b => b.addEventListener("click", ()=>{ set(b.dataset.v === "1"); save(); render(); })); }
 
 /* ============================================================
    render
    ============================================================ */
 function render(){
+  hideTip();
   invalidate();
   maybeAutoPlan();
   document.body.classList.toggle("adv", !!S.settings.advanced); paintTabs();

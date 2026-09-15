@@ -779,6 +779,53 @@ def main():
         check("Auto-fill and Send them on sit together at the top of Next", head)
 
         # ---------------------------------------------------------------
+        section("Field versus Next")
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        mode = pg.evaluate("""(() => {
+          activeTab = 'field'; S.game.next = null; S.game.planCleared = false; render();
+          const r = { autoPlanDefault: DEFAULTS.settings.autoPlan, planned: nextCount(),
+                      live: !!document.querySelector('#v-field .modestrip.live'),
+                      fieldBorder: getComputedStyle(document.querySelector('#v-field #pitch')).borderTopStyle,
+                      label: document.getElementById('plan-next') && document.getElementById('plan-next').textContent };
+          document.getElementById('plan-next').click();
+          r.tab = activeTab; r.afterPlan = nextCount();
+          r.plan = !!document.querySelector('#v-next .modestrip.plan');
+          r.nextBorder = getComputedStyle(document.querySelector('#v-next #pitch')).borderTopStyle;
+          r.tabColor = getComputedStyle(document.querySelector('#tabs button[data-tab="next"]')).boxShadow;
+          S.game.next = null; activeTab = 'field'; render();
+          return r; })()""")
+        check("Keep next shift ready is off by default, so no plan appears on its own",
+              mode["autoPlanDefault"] is False and mode["planned"] == 0, str(mode))
+        check("Plan next shift builds a plan and opens Next", mode["tab"] == "next" and mode["afterPlan"] == 7
+              and mode["label"] == "Plan next shift", str(mode))
+        check("Field and Next are marked differently",
+              mode["live"] and mode["plan"] and mode["fieldBorder"] == "solid" and mode["nextBorder"] == "dashed", str(mode))
+
+        tips = pg.evaluate("""(() => {
+          S.settings.advanced = true; activeTab = 'setup'; render();
+          const missing = [];
+          const seen = new Set();
+          document.querySelectorAll('#v-setup [data-tog]').forEach(b => {
+            const id = b.dataset.tog; if (seen.has(id)) return; seen.add(id);
+            if (!b.closest('.row').querySelector('.tipbtn')) missing.push(id); });
+          document.querySelectorAll('#v-setup label.field').forEach(l => {
+            if (!l.querySelector('.tipbtn')) missing.push(l.textContent.trim().slice(0, 30)); });
+          if (!document.querySelector('#adv-on').closest('.card').querySelector('.tipbtn')) missing.push('advanced');
+          const btn = document.querySelector('#v-setup .tipbtn[data-tip="s-keeper"]');
+          btn.click();
+          const bubble = document.getElementById('tipbubble');
+          const shown = !bubble.hidden && bubble.textContent.indexOf('goalie') >= 0;
+          document.body.click();
+          const closed = bubble.hidden;
+          const fieldInput = document.querySelector('#v-setup label.field .tipbtn');
+          fieldInput.click(); const noFocus = document.activeElement.tagName !== 'INPUT'; document.body.click();
+          S.settings.advanced = false; activeTab = 'field'; render();
+          return { missing, count: seen.size, shown, closed, noFocus }; })()""")
+        check("every setting has a ? explanation", not tips["missing"], f"missing: {tips['missing']}")
+        check("tapping ? shows the note, tapping elsewhere closes it", tips["shown"] and tips["closed"], str(tips))
+        check("tapping ? on a number setting doesn't open the keyboard", tips["noFocus"], str(tips))
+
+        # ---------------------------------------------------------------
         section("Persistence")
         pg.evaluate("Store.save(S)")
         pg.wait_for_timeout(300)

@@ -163,7 +163,18 @@ bucketed clock. The render path used to call it 100+ times per render via
 mutation; `render()` and `tick()` do it at entry.
 
 **No icons in the UI.** Words or standard box-score letters (G, A, SOG, YC).
-Chevrons for collapse are fine.
+Chevrons for collapse are fine. The one exception is the "?" button beside every
+setting, which the coach asked for; it opens that setting's note from `TIPS`
+(tap on a phone, hover with a mouse). Every new setting needs a `TIPS` entry;
+the tests check this.
+
+**Field and Next must never look alike.** Field has a green "ON THE FIELD NOW"
+strip and a solid green pitch border. Next has an amber "PLANNING NEXT SHIFT"
+strip, a dashed amber border and faint stripes. The active tab's bar matches.
+
+**Keep next shift ready is off by default** (`autoPlan`). The coach makes a plan
+with Plan next shift on Field, which builds it and opens Next. Before kickoff
+that button reads Pick a starting lineup.
 
 **Nothing leaves the device.** No analytics, no sync, no accounts. Storing
 children's names and photos on a server means COPPA and state privacy law.
