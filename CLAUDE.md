@@ -63,8 +63,9 @@ minutes just quietly go wrong. Hence the invariants below.
 
 ## Invariants — these must hold
 
-The Setup tab has a **Run self-check** button (`selfCheck()`) that asserts them
-live. The test suite asserts them too. If you change anything in the time
+`selfCheck()` asserts them live. It has no button any more — the coach asked
+for the Run self-check button on Setup to go (2026-09-15) — but keep the
+function; the tests call it. The test suite asserts them too. If you change anything in the time
 model, check both.
 
 1. **Minutes add up.** Sum of all players' time equals the integral of
@@ -232,7 +233,11 @@ never swapped in. The ~5 MB quota is shared by all teams.
 Photos are 128×128 JPEG at q=0.72, roughly 5 KB each. The archive holds up to
 100 game summaries (a few KB each) and keeps full event logs for the 3 most
 recent games only, because logs plus base64 photos will otherwise approach the
-~5 MB localStorage ceiling.
+~5 MB localStorage ceiling. Backups include the photos.
+
+**Share backup sends a `.txt` file** (`text/plain`). Android Chrome's Web Share
+refuses `.json`, which showed as "Sharing isn't available". Save backup file
+still writes `.json`; Open backup file takes either.
 
 ## Past games and season
 

@@ -939,6 +939,27 @@ def main():
               not tidy["oldButtons"] and tidy["lineupsModal"] and tidy["cleared"], str(tidy))
         check("the Available list on Next takes at most two lines", 1 <= tidy["poolRows"] <= 2, str(tidy))
 
+        share = pg.evaluate("""(async () => {
+          const got = {};
+          /* stand in for Android Chrome, which only shares files of certain types */
+          Object.defineProperty(navigator, 'canShare', { configurable: true, value: d => !!(d.files && d.files[0].type === 'text/plain' && /\\.txt$/.test(d.files[0].name)) });
+          Object.defineProperty(navigator, 'share', { configurable: true, value: async d => { const f = d.files && d.files[0]; got.name = f && f.name; got.type = f && f.type; got.text = f && await f.text(); } });
+          S.roster[0].photo = 'data:image/jpeg;base64,TESTPHOTO';
+          activeTab = 'setup'; render();
+          got.noSelfCheck = !document.getElementById('s-check');
+          const btn = document.getElementById('s-share'); got.btn = !!btn;
+          if (btn) btn.click();
+          await new Promise(r => setTimeout(r, 400));
+          got.photo = !!got.text && got.text.indexOf('base64,TESTPHOTO') >= 0;
+          got.accept = document.getElementById('s-file').accept;
+          delete got.text;
+          S.roster[0].photo = null; activeTab = 'field'; render();
+          return got; })()""")
+        check("Share backup sends a .txt file that Android will share", share["btn"] and (share["name"] or "").endswith(".txt")
+              and share["type"] == "text/plain", str(share))
+        check("backups include photos, and Open backup file takes .txt", share["photo"] and ".txt" in share["accept"], str(share))
+        check("the Run self-check button is gone from Setup", share["noSelfCheck"], str(share))
+
         # ---------------------------------------------------------------
         section("Persistence")
         pg.evaluate("Store.save(S)")

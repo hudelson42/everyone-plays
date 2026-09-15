@@ -2250,13 +2250,21 @@ function summaryCSV(){
   return "Name,Number,GK,Defense,Midfield,Forward,Total,Positions\n" + S.roster.map(p => { const r = st[p.id]; return '"'+p.name.replace(/"/g,'""')+'",'+(p.number||"")+","+mins(r.GK)+","+mins(r.DEF)+","+mins(r.MID)+","+mins(r.FWD)+","+mins(r.total)+',"'+posSummary(r, "; ")+'"'; }).join("\n");
 }
 function stamp(){ const d = new Date(), pad = n => String(n).padStart(2,"0"); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes()); }
-function backupName(){ return "everyone-plays-backup-"+stamp()+".json"; }
+function backupName(ext){ return "everyone-plays-backup-"+stamp()+(ext || ".json"); }
 function saveFile(name, text, mime){
   try{ const blob = new Blob([text], {type:mime}), url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = name; a.style.display = "none"; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 4000); toast("Saved "+name); }
   catch(e){ toast("Browser blocked download — use Copy as text instead"); }
 }
+/* Android Chrome only shares a short list of file types, and .json isn't one of them, so files go out
+   as .txt / text/plain. Big text (a backup with photos) is too long to share as a message, so if files
+   can't be shared it's saved instead. */
 async function shareFile(name, text, mime, title){
-  try{ const file = new File([text], name, {type:mime}); if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title}); return; } await navigator.share({title, text}); }
+  try{
+    const file = new File([text], name, {type:mime});
+    if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title}); return; }
+    if(text.length > 20000){ saveFile(name, text, mime); toast("This phone can't share that file, so it was saved to Downloads"); return; }
+    await navigator.share({title, text});
+  }
   catch(e){ if(e && e.name === "AbortError") return; toast("Sharing isn't available here"); }
 }
 /* A backup of all teams replaces everything. One from before teams existed is added as a new
@@ -2630,7 +2638,7 @@ function renderHelp(){
       q("Can I put this on my home screen?",
         "Yes, and you should. In Safari tap Share then <b>Add to Home Screen</b>; in Chrome it's the menu then <b>Install app</b> or <b>Add to Home screen</b>. It then opens full screen with no address bar and runs with no signal at all.")+
       q("Something looks wrong.",
-        "Setup has a <b>Run self-check</b> button. It confirms the minutes add up, nobody is on the field twice, and saving is working.")+
+        "<b>Undo last</b> on the Field tab steps back one change at a time and says what it undid. Minutes are worked out from the list of changes in History, so fixing a change there fixes the minutes too.")+
     '</div>'+
     '<div class="card"><h2>Is this really free?</h2><div class="muted" style="line-height:1.5">Yes. No ads, no accounts, and nothing about your team leaves your phone. If it helps your team, you can <a class="tiplink" href="https://ko-fi.com/hudelson" target="_blank" rel="noopener">buy the developer a coffee</a>.</div></div>'+
     '<div class="card"><h2>Not sure about a button?</h2><div class="muted">Nothing on the Field or Next tab is permanent. Undo is always one tap away, and the clock keeps running either way.</div></div>';
@@ -2654,9 +2662,8 @@ function renderSetup(){
       toggleRow("s-fresh","Try new positions",s.freshPositions!==false)+toggleRow("s-seasonbal","Balance past games",!!s.seasonBalance)+switchField(s.maxSwitch)+
       '<div class="adv-only">'+toggleRow("s-gk","Suggest next goalie",!!s.goalieRotation)+toggleRow("s-yc","Yellow card sin bin",!!s.ycSinBin)+'</div>'+
       '<div class="muted">How it works explains each of these.</div></div>'+
-    '<div class="card"><h2>Screen and controls</h2>'+toggleRow("s-confirm","Confirm tap changes",s.confirmChanges!==false)+toggleRow("s-sun","Sun mode",s.sun)+toggleRow("s-support","After-game support note",s.supportNotes!==false)+
-      '<div class="row" style="margin-top:8px"><button class="btn ghost" id="s-check">Run self-check</button></div></div>'+
-    '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone, and includes every team.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
+    '<div class="card"><h2>Screen and controls</h2>'+toggleRow("s-confirm","Confirm tap changes",s.confirmChanges!==false)+toggleRow("s-sun","Sun mode",s.sun)+toggleRow("s-support","After-game support note",s.supportNotes!==false)+'</div>'+
+    '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone, and includes every team.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,.txt,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
     '<div class="card"><h2>About this app</h2><div class="muted" style="line-height:1.5">'+
       'Everyone Plays tracks who is on the field and how long each player has been out there, so playing time comes out even without you keeping a tally in your head.<br><br>'+
       'Everything is worked out from a log of substitutions, so the minutes are always consistent with what actually happened. Nothing leaves your phone and nothing needs a signal — it works in airplane mode.<br><br>'+
@@ -2691,9 +2698,8 @@ function renderSetup(){
   document.getElementById("s-help-top").addEventListener("click", ()=>openView("help"));
   bindTog("s-support", v => S.settings.supportNotes = v);
   bindTog("s-extra", v => S.settings.extraTime = v);
-  document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));
   document.getElementById("s-dl").addEventListener("click", ()=>buildBackup().then(text => saveFile(backupName(), text, "application/json")));
-  const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(), text, "application/json", "Everyone Plays backup")));
+  const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(".txt"), text, "text/plain", "Everyone Plays backup")));
   const fi = document.getElementById("s-file"); document.getElementById("s-open").addEventListener("click", ()=>fi.click());
   fi.addEventListener("change", ()=>{ const f = fi.files && fi.files[0]; fi.value = ""; if(!f) return; const fr = new FileReader(); fr.onload = () => loadBackup(fr.result); fr.onerror = () => toast("Couldn't read that file"); fr.readAsText(f); });
   document.getElementById("s-exp").addEventListener("click", ()=>buildBackup().then(copyOut));
