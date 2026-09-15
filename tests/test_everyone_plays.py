@@ -292,7 +292,8 @@ def main():
           S.game.running = true; S.game.startedAt = Date.now() - 30000; S.game.base = 1500;
           tick();
           r.period = S.game.period; r.onBreak = S.game.onBreak; r.over = S.game.periodOver;
-          r.elapsed = Math.round(periodElapsed()); r.label = document.getElementById('tb-period').textContent;
+          r.elapsed = Math.round(periodElapsed()); r.label = document.getElementById('tb-shiftlab').textContent;
+          r.corner = document.getElementById('tb-shiftval').textContent;
           const btn = document.getElementById('f-endper'); r.card = !!btn;
           r.extra = (document.querySelector('#v-field [data-extra]') || {}).textContent;
           const minsBefore = Math.round(compute()[S.roster[0].id].total);
@@ -304,7 +305,9 @@ def main():
         check("extra time is on by default", xt["dflt"] is True, str(xt))
         check("with extra time on, the clock keeps running past full time",
               xt["period"] == 1 and not xt["onBreak"] and not xt["over"] and xt["elapsed"] >= 1530
-              and "extra time" in xt["label"] and xt["extra"] == "+0:30", str(xt))
+              and xt["extra"] == "+0:30", str(xt))
+        check("in extra time the top bar counts extra time instead of the shift",
+              xt["label"] == "extra time" and xt["corner"] == "+0:30", str(xt))
         check("ending the period from Field keeps the extra minutes and moves on",
               xt["card"] and xt["after"]["period"] == 2 and xt["after"]["onBreak"] and not xt["after"]["running"]
               and xt["after"]["prior"] >= 1530 and xt["after"]["mins"] >= 1530, str(xt))
@@ -817,9 +820,9 @@ def main():
         check("Help opens from Setup and Back returns there", nav["help"] and nav["helpBack"] == "setup", str(nav))
         order = pg.evaluate("""(() => { activeTab = 'field'; render();
           const bench = [...document.querySelectorAll('#v-field h3')].find(h => h.textContent === 'Bench');
-          const reset = document.getElementById('reset-shift');
-          return !!(bench && reset && (bench.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING)); })()""")
-        check("the bench comes right after the field, before the shift buttons", order)
+          const undo = document.getElementById('undo');
+          return !!(bench && undo && (bench.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_FOLLOWING)); })()""")
+        check("the bench comes right after the field, before Undo", order)
         head = pg.evaluate("""(() => { activeTab = 'next'; render();
           const row = document.getElementById('n-auto').parentElement; const r = row.contains(document.getElementById('n-send'));
           activeTab = 'field'; render(); return r; })()""")
@@ -890,6 +893,51 @@ def main():
         check("tapping a second bench player selects them instead of asking to swap",
               taps["field"] == taps["want"] and not taps["modal"], str(taps))
         check("the same goes for two unplanned players on Next", taps["next"] == taps["wantNext"], str(taps))
+
+        pg.evaluate(SEED, [ROSTER, 7, True])
+        tidy = pg.evaluate("""(() => {
+          const main = document.querySelector('main');
+          S.settings.tapHintHidden = false; S.game.next = null; S.game.planCleared = true; S.game.base = 60;
+          activeTab = 'field'; selected = null; invalidate(); render();
+          const r = {};
+          const plan = document.getElementById('plan-next');
+          r.planInHead = !!(plan && plan.closest('.benchhead'));
+          r.fieldTime = getComputedStyle(document.querySelector('#v-field .band .chip .tm')).color;
+          r.benchTime = getComputedStyle(document.querySelector('#v-field #bench .chip .tm')).color;
+          r.undoLink = document.getElementById('undo').classList.contains('linkbtn');
+          r.resetEarly = !!document.getElementById('reset-shift');
+          S.game.base = S.settings.shiftLen * 60 + 5; invalidate(); tick(); render();
+          r.resetLate = !!document.getElementById('reset-shift');
+          r.hint = !!document.getElementById('f-hintok');
+          document.getElementById('f-hintok').click();
+          r.hintGone = !document.getElementById('f-hintok') && S.settings.tapHintHidden === true && SHARED.includes('tapHintHidden');
+          plan.click(); activeTab = 'field'; render();
+          r.sendInHead = !!(document.getElementById('send-next') && document.getElementById('send-next').closest('.benchhead'));
+          selected = { t: 'p', id: fieldLayout().slots.DEF[0], kind: 'field' }; render();
+          r.barH = Math.round(document.querySelector('#v-field .selbar').getBoundingClientRect().height);
+          selected = null;
+          activeTab = 'next'; render();
+          r.oldButtons = ['n-load', 'n-save', 'n-clear'].some(id => document.getElementById(id));
+          const pool = [...document.querySelectorAll('#v-next #poolzone .chip')];
+          r.poolRows = new Set(pool.map(c => Math.round(c.getBoundingClientRect().top))).size;
+          document.getElementById('n-lineups').click();
+          r.lineupsModal = !!document.getElementById('nl-load') && !!document.getElementById('nl-save') && !!document.getElementById('nl-clear');
+          document.getElementById('nl-clear').click();
+          r.cleared = nextCount() === 0;
+          activeTab = 'clock'; render();
+          r.clockNewShift = !!document.getElementById('c-newshift');
+          S.settings.tapHintHidden = false; S.settings.advanced = false; activeTab = 'field'; render();
+          return r; })()""")
+        check("Plan next shift and Send them on sit on the Bench heading", tidy["planInHead"] and tidy["sendInHead"], str(tidy))
+        check("field times (this stint) look different from bench times (minutes played)",
+              tidy["fieldTime"] != tidy["benchTime"], str(tidy))
+        check("the tap hint goes away after Got it, on this phone for every team", tidy["hint"] and tidy["hintGone"], str(tidy))
+        check("Undo is a small link; Start a new shift shows only once the shift is up, and is always on the clock screen",
+              tidy["undoLink"] and not tidy["resetEarly"] and tidy["resetLate"] and tidy["clockNewShift"], str(tidy))
+        check("the selected-player bar stays compact, even in Advanced mode", tidy["barH"] <= 140, str(tidy))
+        check("Load, Save and Clear sit behind one Lineups button on Next",
+              not tidy["oldButtons"] and tidy["lineupsModal"] and tidy["cleared"], str(tidy))
+        check("the Available list on Next takes at most two lines", 1 <= tidy["poolRows"] <= 2, str(tidy))
 
         # ---------------------------------------------------------------
         section("Persistence")

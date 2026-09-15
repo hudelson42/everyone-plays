@@ -121,7 +121,8 @@ referee ends the period, not the app.
 **A loaded lineup never leaves a spot open if someone can fill it.**
 `loadLineup()` places saved players first. `fillOpenSpots()` then gives any spot
 that would go on empty (nothing planned, nobody standing there) to the fairest
-available player, and the toast names them. Save on the Next tab saves the plan
+available player, and the toast names them. Save this plan (under Lineups on
+the Next tab) saves the plan
 (`saveLineup(name, true)` uses `resolvePlan()`); Save from the field saves the
 field.
 
@@ -138,7 +139,21 @@ the left half and the team button on the right, even with one team. There is no
 Up next strip; the coach found it added nothing.
 
 **Two bench players can't swap**, so tapping one then another just selects the
-second (on Next, the same for two players who aren't in the plan). Rotating the phone re-renders. The selected-player bar is sticky with `z-index:20`,
+second (on Next, the same for two players who aren't in the plan).
+
+**Field keeps its chrome small.** Plan next shift (or Edit plan / Send them on)
+sits on the Bench heading, not in a row above the field. On-field card times
+are this stint and shown in green; bench times are minutes played. The how-to
+hint has a Got it link (`tapHintHidden`, a per-phone value in `SHARED`, not a
+Setup switch) and stops showing after three filed games. Undo last is a small
+link; Start a new shift appears on Field only once the shift clock has run out
+(`tick()` re-renders when that flips) and is always on the clock screen. The
+selected-player bar is one line of text plus button rows. In extra time the
+top bar's shift corner counts the extra time instead.
+
+**Next's top is one row:** Auto-fill, Lineups (Load / Save this plan / Clear,
+in a pop-up) and Send them on. The Available list takes one line up to eight
+players, two past that (`benchSize()`). Rotating the phone re-renders. The selected-player bar is sticky with `z-index:20`,
 and `#pitch` uses `isolation:isolate` so the bands' `z-index` can't paint over
 it. A real Android test showed oversized cards covering its buttons.
 
@@ -206,7 +221,8 @@ Setup shows a warning banner when `storageMode === "memory"`.
 its own storage key; the first team keeps the original key
 (`sideline-tracker-v1`), so saves from before teams load unchanged. The index
 (`sideline-teams-v1`, the `TEAMS` object) lists the teams, which one is open,
-and the settings in `SHARED` (sun, sound, vibrate, dragBuzz), which belong to
+and the settings in `SHARED` (sun, sound, vibrate, dragBuzz, supportNotes,
+tapHintHidden), which belong to
 the phone rather than a team. Nothing outside the teams section should know
 teams exist — keep it that way. Switching pauses a running clock first, since
 only the open team's clock can move. Always load state through `hydrate()`.

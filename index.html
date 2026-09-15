@@ -140,8 +140,8 @@ textarea{min-height:110px;font-family:ui-monospace,Menlo,monospace;font-size:11p
 .seg button:last-child{border-right:none}
 .seg button.on{background:var(--on);color:#06150E}
 body.sun .seg button.on{color:#fff;background:var(--on)}
-.ev-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
-.ev-grid .btn { font-size: 11px; padding: 0; min-height: 38px; }
+.ev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); gap: 4px; margin-top: 6px; }
+.ev-grid .btn { font-size: 11px; padding: 0; min-height: var(--tap); }
 
 /* ---------- pitch ---------- */
 #pitch{
@@ -224,10 +224,22 @@ body.sun .chip .pc{color:#000}
 #bench{display:flex;flex-wrap:wrap;gap:6px}
 /* Field's bench sits on one line: renderField sizes the cards to fit (--bw, --bavs) */
 #benchzone #bench{gap:4px}
-#benchzone .chip{width:var(--bw,80px);min-height:0;padding:6px 1px 2px}
-#benchzone .chip .av,#benchzone .chip .avn{width:var(--bavs,30px);height:var(--bavs,30px);font-size:calc(var(--bavs,30px) * .42)}
-#benchzone .chip .nm{max-width:calc(var(--bw,80px) - 4px);font-size:12px}
-#v-field h3.benchh{margin:2px 0 2px}
+#poolzone{min-height:60px}
+#poolzone #bench{gap:4px}
+#benchzone .chip,#poolzone .chip{width:var(--bw,80px);min-height:0;padding:6px 1px 2px}
+#benchzone .chip .av,#benchzone .chip .avn,#poolzone .chip .av,#poolzone .chip .avn{width:var(--bavs,30px);height:var(--bavs,30px);font-size:calc(var(--bavs,30px) * .42)}
+#benchzone .chip .nm,#poolzone .chip .nm{max-width:calc(var(--bw,80px) - 4px);font-size:12px}
+/* on the field a card's time is this stint, in green; everywhere else it's minutes played */
+#v-field .band .chip .tm{color:var(--on)}
+.benchhead{display:flex;align-items:center;gap:6px;margin:0 0 2px}
+.benchhead>div{flex:1;min-width:0;line-height:1.2}
+.benchhead h3{margin:0}
+.benchhead .muted{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.benchhead .btn{flex:none;padding:0 12px;font-size:13px}
+#v-next h3.poolh{margin:2px 0 2px}
+.linkrow{display:flex;justify-content:space-between;gap:12px;margin:4px 0}
+.linkbtn{min-height:var(--tap);padding:0 4px;color:var(--ink-dim);font-size:13px;font-weight:600;text-decoration:underline}
+.hint .linkbtn{min-height:0;padding:0 2px;color:var(--on)}
 .hint{font-size:12px;color:var(--ink-dim);margin:8px 0}
 .startrow{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.4}
 .startrow div b{color:var(--on)}
@@ -265,8 +277,16 @@ tr.low td:last-child{color:var(--warn);font-weight:700}
 .helpa b{color:var(--ink)}
 .selbar{
   position:sticky;bottom:0;z-index:20;box-shadow:0 -6px 16px rgba(0,0,0,.35);background:var(--panel);border:1px solid var(--next);
-  border-radius:var(--r);padding:10px;margin-top:10px;font-size:13px;
+  border-radius:var(--r);padding:8px;margin-top:8px;font-size:13px;
 }
+.selbar .row{margin-top:6px;gap:6px}
+.selbar .row .btn{padding:0 8px;font-size:13px}
+.selbar .muted{font-size:12px}
+.seltxt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.selbar .ev-grid{margin-top:4px}
+.selrow{display:flex;align-items:center;gap:8px}
+.selrow>div{flex:1;min-width:0}
+.selrow .btn{flex:none}
 
 /* ---------- grid ---------- */
 table.grid{width:100%;border-collapse:collapse;table-layout:fixed}
@@ -437,7 +457,7 @@ function slotPos(band, i){ return posCodes(band, slotsFor(band))[i] || null; }
 const KEY = "sideline-tracker-v1";     /* the first team's data, where the app has always kept it */
 const INDEX_KEY = "sideline-teams-v1";
 /* sun mode, sound and vibration belong to the phone and the coach, not to a team */
-const SHARED = ["sun","sound","vibrate","dragBuzz","supportNotes"];
+const SHARED = ["sun","sound","vibrate","dragBuzz","supportNotes","tapHintHidden"];
 let TEAMS = freshTeams();               /* {v, active, list:[{id, name, key, players, bytes}], shared} */
 let storageMode = "memory";
 const memStore = {};                    /* last resort, so switching teams still works when storage is blocked */
@@ -478,7 +498,8 @@ const DEFAULTS = {
     advanced:false, teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:5,
     minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:null /* no limit */, rotate:true, freshPositions:true,
     confirmChanges:true, autoPlan:false, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
-    seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true, rotateKeeper:true, extraTime:true
+    seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true, rotateKeeper:true, extraTime:true,
+    tapHintHidden:false /* not a Setup switch: set by Got it under the Field hint */
   },
   game:newGame(), archive:[], lineups:[]
 };
@@ -790,6 +811,12 @@ function pitchSize(widest){
   const avs = Math.max(28, Math.min(40, Math.round(cw * 0.42)));
   return "--cw:"+cw+"px;--avs:"+avs+"px";
 }
+/* Bench cards narrow (46–80 px) so perRow of them share one line; photos no bigger than the field's */
+function benchSize(perRow, pitchVars){
+  const n = Math.max(1, perRow), inner = Math.max(240, (window.innerWidth || 390) - 24);
+  const bw = Math.max(46, Math.min(80, Math.floor((inner - 4*(n-1)) / n)));
+  return "--bw:"+bw+"px;--bavs:"+Math.min(parseInt(String(pitchVars).split("--avs:")[1]) || 40, bw - 8)+"px";
+}
 /* Then make the whole pitch fit on one screen, below whatever sits above it and above the
    selected-player bar if one is open. Runs after paintLive, because the stint times change the
    card height. Photos shrink first (not below 24 px); if that isn't enough the pitch goes tight —
@@ -799,7 +826,7 @@ function fitPitch(viewId){
   const pitch = view ? view.querySelector("#pitch") : null;
   if(!pitch || !main || !main.clientHeight) return;
   /* how far an element's bottom sits past the bottom of the screen, or past the selected-player bar */
-  const bar = view.querySelector(".selbar"), bench = bar ? null : view.querySelector("#benchzone");
+  const bar = view.querySelector(".selbar"), bench = bar ? null : view.querySelector("#benchzone,#poolzone");
   const past = el => el.getBoundingClientRect().bottom - main.getBoundingClientRect().top + main.scrollTop
     - (main.clientHeight - 8 - (bar ? bar.offsetHeight + 12 : 0));
   /* tighten the spacing first, so the bench fits too; photos keep their size unless the pitch alone won't fit */
@@ -1305,9 +1332,13 @@ function tick(){
     (Date.now() - g.pausedAt) > 120000 && Object.values(compute()).some(r => r.onBand);
   document.getElementById("topbar").classList.toggle("paused", !!idle);
   if(idle && !g.nagged){ g.nagged = true; alarm("warn"); toast("The clock is still paused. Tap START when play restarts."); }
+  /* Field offers Start a new shift once the shift clock runs out, so redraw when that flips */
+  const shiftOut = !!g.log.length && shiftRemaining() <= 0;
+  if(shiftOut !== _shiftOut){ _shiftOut = shiftOut; if(activeTab === "field" && !drag) render(); }
   checkSinBin();
   paintClocks(); paintLive();
 }
+let _shiftOut = false;
 /* a sin bin that expires silently is useless — watch for it and say so */
 let _binWatch = {};
 function checkSinBin(){
@@ -1329,15 +1360,16 @@ function paintClocks(){
   const s = S.settings;
   document.getElementById("tb-clock").textContent = fmt2(periodElapsed());
   document.getElementById("tb-period").textContent = S.game.periodOver ? (S.game.period >= s.periods ? "Game over" : "Period " + S.game.period + " over")
-    : S.game.onBreak ? "Period " + S.game.period + " ready"
-    : inExtraTime() ? "Period " + S.game.period + " · extra time" : "Period " + S.game.period + " of " + s.periods;
-  const extra = "+" + fmt(periodElapsed() - s.periodLen*60);
+    : S.game.onBreak ? "Period " + S.game.period + " ready" : "Period " + S.game.period + " of " + s.periods;
+  /* in extra time the shift countdown is noise, so that corner counts the extra time instead */
+  const xt = inExtraTime(), extra = "+" + fmt(periodElapsed() - s.periodLen*60);
   document.querySelectorAll("[data-extra]").forEach(el => el.textContent = extra);
   const rem = shiftRemaining();
-  document.getElementById("tb-shiftval").textContent = (rem<0?"+":"") + fmt(Math.abs(rem));
+  document.getElementById("tb-shiftval").textContent = xt ? extra : (rem<0?"+":"") + fmt(Math.abs(rem));
+  document.getElementById("tb-shiftlab").textContent = xt ? "extra time" : "shift left";
   document.getElementById("tb-go").textContent = S.game.running ? "PAUSE" : "START";
   document.getElementById("tb-go").classList.toggle("running", S.game.running);
-  document.getElementById("topbar").classList.toggle("over", rem <= 0);
+  document.getElementById("topbar").classList.toggle("over", rem <= 0 || xt);
   
   const sc = computeMatchScore();
   document.getElementById("sc-us").textContent = sc.us;
@@ -1346,7 +1378,7 @@ function paintClocks(){
   const bc = document.getElementById("big-clock");
   if(bc){
     bc.textContent = fmt2(periodElapsed());
-    const br = document.getElementById("big-shift"); if(br) br.textContent = (rem<0?"+":"") + fmt(Math.abs(rem));
+    const br = document.getElementById("big-shift"); if(br) br.textContent = xt ? "–" : (rem<0?"+":"") + fmt(Math.abs(rem));
     const bp = document.getElementById("big-left"); if(bp) bp.textContent = inExtraTime() ? extra + " extra time" : fmt(periodRemaining()) + " left";
   }
 }
@@ -1448,18 +1480,18 @@ function renderField(){
   });
   pitch += '</div>';
 
-  /* the bench fits on one line: cards narrow to share the width, photos no bigger than the field's */
-  const bench = S.roster.filter(p => !st[p.id].onBand), nb = Math.max(1, bench.length);
-  const bw = Math.max(46, Math.min(80, Math.floor((Math.max(240, (window.innerWidth || 390) - 24) - 4*(nb-1)) / nb)));
-  const bavs = Math.min(parseInt(pitchVars.split("--avs:")[1]) || 40, bw - 8);
-  let benchHTML = '<div id="benchzone" style="--bw:'+bw+'px;--bavs:'+bavs+'px"><div id="bench">' + (bench.length ? bench.map(p => chip(p, st, null, "bench", nextIds.includes(p.id))).join("") : '<div class="muted">Everyone on the roster is on the field.</div>') + '</div></div>';
+  const bench = S.roster.filter(p => !st[p.id].onBand);
+  let benchHTML = '<div id="benchzone" style="'+benchSize(bench.length, pitchVars)+'"><div id="bench">' + (bench.length ? bench.map(p => chip(p, st, null, "bench", nextIds.includes(p.id))).join("") : '<div class="muted">Everyone on the roster is on the field.</div>') + '</div></div>';
 
   const diff = nextCount() ? planDiff() : [];
   const changes = diff.length;
   const onCt = diff.filter(e=>e.type==="ON").length, offCt = diff.filter(e=>e.type==="OFF").length, mvCt = diff.filter(e=>e.type==="MOVE").length;
-  const banner = changes
-    ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>Next shift is ready</b> <span class="muted">· '+onCt+' on · '+offCt+' off'+(mvCt?' · '+mvCt+' switching':'')+'</span><div class="row" style="margin-top:8px"><button class="btn primary" id="send-next">Send them on</button><button class="btn ghost" id="edit-next">Edit plan</button></div></div>'
-    : '<div class="row" style="margin-bottom:10px"><button class="btn primary" id="plan-next">'+(S.game.log.length ? "Plan next shift" : "Pick a starting lineup")+'</button></div>';
+  /* the plan buttons share the Bench heading, so they don't take a row above the field */
+  const benchHead = '<div class="benchhead"><div><h3>Bench</h3><div class="muted">'+
+    (changes ? 'Next: '+onCt+' on · '+offCt+' off'+(mvCt?' · '+mvCt+' moving':'') : 'Times are minutes played')+'</div></div>'+
+    (selected ? '' : changes
+      ? '<button class="btn ghost" id="edit-next">Edit plan</button><button class="btn primary" id="send-next">Send them on</button>'
+      : '<button class="btn primary" id="plan-next">'+(S.game.log.length ? "Plan next shift" : "Pick a starting lineup")+'</button>')+'</div>';
 
   /* between periods and after the whistle, say what happens next right here */
   const periodCard = S.game.onBreak && S.game.log.length
@@ -1474,6 +1506,10 @@ function renderField(){
       '<button class="btn" id="f-lineup">Load a lineup</button></div>' : "";
 
   /* past full time with extra time on: the clock keeps running until the coach ends the period */
+  /* the how-to line goes once the coach taps Got it, or after three filed games */
+  const noKeeper = formation().gk ? "" : "No keeper in this formation. ";
+  const showHint = !S.settings.tapHintHidden && S.archive.length < 3;
+  const hint = (noKeeper || showHint) ? '<div class="hint">'+noKeeper+(showHint ? 'Tap a spot then a player, or two players to swap. Press and hold to drag. Green times are how long each player has been on. <button class="linkbtn" id="f-hintok">Got it</button>' : '')+'</div>' : '';
   const xtra = inExtraTime()
     ? '<div class="card xtra"><div><b>Extra time</b> <span class="mono" data-extra></span><div class="muted">Minutes still count.</div></div><button class="btn warn" id="f-endper">End period '+S.game.period+'</button></div>'
     : '';
@@ -1495,9 +1531,11 @@ function renderField(){
   document.getElementById("v-field").innerHTML =
     /* while a player is selected the cards above the field step aside, so field and bar both fit */
     '<div class="toprow"><div class="modestrip live"><b>ON THE FIELD NOW</b> live</div>' + teamBar("f-team", true, true) + '</div>' +
-    (selected ? '' : xtra + periodCard + supportCard() + banner + preBar) + pitch + '<h3 class="benchh">Bench</h3>' + benchHTML +
-    (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap a spot then a player, or two players to swap. Press and hold to drag. Changes here count as mid-shift swaps.</div>') +
-    '<div class="row" style="margin:10px 0"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div>';
+    (selected ? '' : xtra + periodCard + supportCard() + preBar) + pitch + benchHead + benchHTML +
+    (selected ? selbar(st) : hint) +
+    /* Start a new shift is only needed once the shift clock has run out; the clock screen always has it */
+    '<div class="linkrow"><button class="linkbtn" id="undo">Undo last</button>'+
+    (S.game.log.length && shiftRemaining() <= 0 ? '<button class="linkbtn" id="reset-shift">Start a new shift</button>' : '')+'</div>';
 
   document.querySelectorAll("#v-field [data-chip]").forEach(el => {
     el.addEventListener("click", ()=>{ if(!suppressClick) tapChip(el.dataset.chip, el.dataset.kind); });
@@ -1539,8 +1577,10 @@ function renderField(){
   if(goNext) goNext.addEventListener("click", ()=>{ activeTab = lastTab = "next"; if(!nextCount()){ S.game.planCleared = false; autoFillNext(); } render(); document.querySelector("main").scrollTop = 0; });
   const ed = document.getElementById("edit-next"); if(ed) ed.addEventListener("click", ()=>{ activeTab = "next"; render(); });
   const sn = document.getElementById("send-next"); if(sn) sn.addEventListener("click", sendNextShift);
-  document.getElementById("reset-shift").addEventListener("click", ()=>{ beginNewShift(); save(); render(); toast("Shift "+S.game.shift+" started"); });
+  const rs = document.getElementById("reset-shift");
+  if(rs) rs.addEventListener("click", ()=>{ beginNewShift(); save(); render(); toast("Shift "+S.game.shift+" started"); });
   document.getElementById("undo").addEventListener("click", undoLast);
+  const hk = document.getElementById("f-hintok"); if(hk) hk.addEventListener("click", ()=>{ S.settings.tapHintHidden = true; save(); render(); });
   const cs = document.getElementById("clear-sel"); if(cs) cs.addEventListener("click", ()=>{ selected=null; render(); });
   const sb = document.getElementById("sub-off");
   if(sb) sb.addEventListener("click", ()=>{
@@ -1570,7 +1610,7 @@ function chip(p, st, band, kind, isNext, pos){
 }
 function selbar(st){
   if(selected.t === "s"){
-    return '<div class="selbar"><b>'+esc(posName(slotPos(selected.band, selected.i)) || BANDNAME[selected.band])+'</b> spot is open — tap the player you want there.<div class="row" style="margin-top:8px"><button class="btn ghost" id="clear-sel">Clear</button></div></div>';
+    return '<div class="selbar selrow"><div><b>'+esc(posName(slotPos(selected.band, selected.i)) || BANDNAME[selected.band])+'</b> is open. <span class="muted">Tap the player you want there.</span></div><button class="btn ghost" id="clear-sel">Clear</button></div>';
   }
   const p = byId(selected.id); if(!p) return "";
   const isField = !!st[p.id].onBand;
@@ -1580,13 +1620,13 @@ function selbar(st){
        <button class="btn ghost" id="ev-ast">Assist</button>
        <button class="btn ghost" id="ev-sog">SOG</button>
        <button class="btn ghost" id="ev-shot">Shot</button>
-       ${isField && st[p.id].onBand === 'GK' ? '<button class="btn ghost" id="ev-save">Save</button>' : '<div></div>'}
+       ${isField && st[p.id].onBand === 'GK' ? '<button class="btn ghost" id="ev-save">Save</button>' : ''}
        <button class="btn ghost" id="ev-yel" style="color:var(--warn);border-color:var(--warn)">Yellow</button>
        <button class="btn ghost" id="ev-red" style="color:var(--alert);border-color:var(--alert)">Red</button>
     </div>` : '';
-  return '<div class="selbar"><b>'+esc(p.name)+'</b> selected. '+
-    (isField ? "Tap a bench player to sub in, a spot to move, or a teammate to swap." : "Tap an open spot or the player to replace.")+
-    '<div class="row" style="margin-top:8px">'+
+  return '<div class="selbar"><div class="seltxt"><b>'+esc(p.name)+'</b> <span class="muted">'+
+    (isField ? "Tap a bench player, a spot, or a teammate." : "Tap an open spot or the player to replace.")+
+    '</span></div><div class="row">'+
       (isField ? '<button class="btn warn" id="sub-hurt">Hurt: sub out</button><button class="btn ghost" id="sub-off">Take off</button>' : '')+
       '<button class="btn ghost" id="clear-sel">Clear</button></div>'+
     evts+'</div>';
@@ -1774,7 +1814,8 @@ function renderNext(){
 
   const inPlan = {}; BANDS.forEach(b => n[b].forEach(id => { if(id) inPlan[id] = 1; }));
   const pool = S.roster.filter(p => !inPlan[p.id] && available(p)).sort((a,b) => st[a.id].total - st[b.id].total);
-  const poolHTML = '<div id="poolzone"><div id="bench">' + (pool.length ? pool.map(p => {
+  /* one line for up to eight players, two lines past that */
+  const poolHTML = '<div id="poolzone" style="'+benchSize(pool.length <= 8 ? pool.length : Math.ceil(pool.length/2), pitchVars)+'"><div id="bench">' + (pool.length ? pool.map(p => {
     const stale = isStale(p.id);
     return '<button class="chip'+((nextSel&&nextSel.t==="p"&&nextSel.id===p.id)?" sel":"")+(st[p.id].onBand?" onnow":"")+(stale?" stale":"")+'" data-chip="'+p.id+'" data-kind="pool">'+
       (st[p.id].onBand ? '<span class="flag" style="color:var(--on)">ON</span>' : (stale?'<span class="flag" style="color:var(--warn)">STALE</span>':''))+
@@ -1789,9 +1830,9 @@ function renderNext(){
   document.getElementById("v-next").innerHTML =
     '<div class="modestrip plan"><b>PLANNING NEXT SHIFT</b> not live yet</div>'+
     '<div class="card" style="margin-bottom:10px">'+(S.game.onBreak ? '<div class="muted" style="margin-bottom:6px">Setting up period '+S.game.period+'. Send them on, then tap START when play begins.</div>' : '')+'<b>Shift '+upcomingShift()+'</b> <span class="muted">· '+summary+'</span>'+
-    '<div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn primary" id="n-send"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes")+'</button></div>'+
-    '<div class="row" style="margin-top:6px"><button class="btn ghost" id="n-load">Load</button><button class="btn ghost" id="n-save"'+(placed?"":" disabled")+'>Save</button><button class="btn ghost" id="n-clear"'+(placed?"":" disabled")+'>Clear</button></div></div>'+
-    gkCard + pitch + '<div class="hint">Faded players stay where they are. Tap a spot then a player, or press and hold to drag.</div><h3>Available — lowest minutes first</h3>'+poolHTML;
+    '<div class="row" style="margin-top:8px"><button class="btn" id="n-auto">Auto-fill</button><button class="btn" id="n-lineups">Lineups</button><button class="btn primary" id="n-send" style="flex:1.4"'+(ev.length?"":" disabled")+'>'+(ev.length ? "Send them on" : "No changes")+'</button></div></div>'+
+    gkCard + pitch + '<h3 class="poolh">Available — lowest minutes first</h3>'+poolHTML+
+    '<div class="hint">Faded players stay where they are. Tap a spot then a player, or press and hold to drag.</div>';
 
   document.querySelectorAll("#v-next [data-chip],#v-next [data-nslot]").forEach(el => {
     el.addEventListener("click", ()=>{
@@ -1813,9 +1854,17 @@ function renderNext(){
     document.querySelectorAll("#modalbody [data-gkpick]").forEach(el => el.addEventListener("click", ()=>{ const id = el.dataset.gkpick; closeModal(); planGoalie(id); }));
   });
   document.getElementById("n-auto").addEventListener("click", ()=>{ S.game.planCleared = false; autoFillNext(); render(); toast("Filled by fewest minutes played"); });
-  document.getElementById("n-clear").addEventListener("click", ()=>{ S.game.next = null; S.game.planCleared = true; ensureNext(); nextSel = null; save(); render(); });
   document.getElementById("n-send").addEventListener("click", sendNextShift);
-  document.getElementById("n-save").addEventListener("click", ()=>{
+  const clearPlan = ()=>{ S.game.next = null; S.game.planCleared = true; ensureNext(); nextSel = null; save(); render(); };
+  /* Load, Save and Clear live behind one button, so the top of Next is one row */
+  document.getElementById("n-lineups").addEventListener("click", ()=>{
+    modal("Lineups", '<div class="lulist"><button id="nl-load"><b>Load a saved lineup</b><span class="muted" style="flex:none">'+S.lineups.length+' saved</span></button>'+
+      (placed ? '<button id="nl-save"><b>Save this plan as a lineup</b></button><button id="nl-clear"><b>Clear the plan</b></button>' : '')+'</div>', null, null, "Close");
+    document.getElementById("nl-load").addEventListener("click", ()=>{ closeModal(); openLineups(); });
+    const ns = document.getElementById("nl-save"); if(ns) ns.addEventListener("click", ()=>{ closeModal(); savePlan(); });
+    const nc = document.getElementById("nl-clear"); if(nc) nc.addEventListener("click", ()=>{ closeModal(); clearPlan(); toast("Plan cleared"); });
+  });
+  const savePlan = ()=>{
     modal("Save this lineup", '<div class="muted" style="margin-bottom:6px">Reuse it next Saturday instead of building it again.</div>'+
       '<input type="text" id="lu-name" placeholder="Starting XI, second half, tournament…">', "Save", ()=>{
       const v = (document.getElementById("lu-name").value || "").trim() || "Lineup "+(S.lineups.length+1);
@@ -1823,8 +1872,7 @@ function renderNext(){
       render(); toast("Saved “"+v+"”");
     });
     setTimeout(()=>{ const el=document.getElementById("lu-name"); if(el) el.focus(); }, 60);
-  });
-  document.getElementById("n-load").addEventListener("click", openLineups);
+  };
 }
 function openLineups(){
   if(!S.lineups.length){
@@ -1901,7 +1949,7 @@ function renderClock(){
     '<button class="backlink" id="c-back">‹ Back</button>'+
     '<div class="card" style="text-align:center"><div class="muted">Period '+g.period+' of '+s.periods+'</div><div class="mono" id="big-clock" style="font-size:var(--fs-clock);font-weight:700;letter-spacing:-2px">00:00</div><div class="muted" id="big-left"></div><div style="margin-top:14px" class="muted">Shift clock</div><div class="mono" id="big-shift" style="font-size:34px;font-weight:700">0:00</div><div class="row" style="margin-top:14px"><button class="btn primary" id="c-toggle">'+(g.running?"Pause":"Start")+'</button><button class="btn" id="c-shift">Restart shift</button></div></div>'+
     (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? '<button class="btn primary wide" id="c-newgame">Start a new game</button>' : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End period '+g.period+' now</button><div class="muted" style="margin-top:8px">'+(s.extraTime !== false ? 'At '+s.periodLen+' minutes the buzzer goes and the clock keeps running for extra time, until you end the period.' : 'The clock stops on its own at '+s.periodLen+' minutes.')+' Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
-    '<div class="card"><h2>Game controls</h2><div class="row" style="margin-bottom:8px"><button class="btn" id="c-note">Add a note</button><button class="btn ghost" id="c-undo">Undo last</button></div><button class="btn warn wide" id="c-new">New game</button><div class="muted" style="margin-top:8px">New game clears the clock and all minutes, files this game in History, and keeps your roster and settings.</div></div>';
+    '<div class="card"><h2>Game controls</h2><div class="row" style="margin-bottom:8px"><button class="btn" id="c-note">Add a note</button><button class="btn ghost" id="c-undo">Undo last</button></div><div class="row" style="margin-bottom:8px"><button class="btn" id="c-newshift">Start a new shift</button></div><button class="btn warn wide" id="c-new">New game</button><div class="muted" style="margin-top:8px">New game clears the clock and all minutes, files this game in History, and keeps your roster and settings.</div></div>';
 
   document.getElementById("c-back").addEventListener("click", goBack);
   document.getElementById("c-toggle").addEventListener("click", toggleClock);
@@ -1910,6 +1958,7 @@ function renderClock(){
   const cn = document.getElementById("c-next"); if(cn) cn.addEventListener("click", ()=>nextPeriod(true));
   const cg = document.getElementById("c-newgame"); if(cg) cg.addEventListener("click", promptNewGame);
   document.getElementById("c-undo").addEventListener("click", undoLast);
+  document.getElementById("c-newshift").addEventListener("click", ()=>{ beginNewShift(); save(); render(); toast("Shift "+S.game.shift+" started"); });
   document.getElementById("c-note").addEventListener("click", ()=>{
     modal("Add a note", '<input type="text" id="notetext" placeholder="Goal, injury, ref call…">', "Save note", ()=>{ const v = document.getElementById("notetext").value.trim(); if(v) { push([], v); toast("Note added"); render(); } });
     setTimeout(()=>{ const n=document.getElementById("notetext"); if(n) n.focus(); }, 60);
