@@ -635,7 +635,7 @@ function slotPos(band, i){ return posCodes(band, slotsFor(band))[i] || null; }
 const KEY = "sideline-tracker-v1";     /* the first team's data, where the app has always kept it */
 const INDEX_KEY = "sideline-teams-v1";
 /* sun mode, sound and vibration belong to the phone and the coach, not to a team */
-const SHARED = ["sun","sound","vibrate","dragBuzz","supportNotes","tapHintHidden"];
+const SHARED = ["sun","sound","vibrate","dragBuzz","supportNotes","tapHintHidden","installHidden"];
 let TEAMS = freshTeams();               /* {v, active, list:[{id, name, key, players, bytes}], shared} */
 let storageMode = "memory";
 const memStore = {};                    /* last resort, so switching teams still works when storage is blocked */
@@ -678,7 +678,8 @@ const DEFAULTS = {
     confirmChanges:true, autoPlan:false, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
     seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true, rotateKeeper:true, extraTime:true,
     tapHintHidden:false /* not a Setup switch: set by Got it under the Field hint */,
-    sport:"soccer", preset:null, mixLines:false, foulOut:false, foulLimit:5
+    sport:"soccer", preset:null, mixLines:false, foulOut:false, foulLimit:5,
+    installHidden:false /* also not a Setup switch: set by Not now on the install card */
   },
   game:newGame(), archive:[], lineups:[], lines:{}
 };
@@ -1906,7 +1907,7 @@ function renderField(){
   document.getElementById("v-field").innerHTML =
     /* while a player is selected the cards above the field step aside, so field and bar both fit */
     '<div class="toprow"><div class="modestrip live"><b>ON THE '+sp.surface.toUpperCase()+' NOW</b> live</div>' + teamBar("f-team", true, true) + '</div>' +
-    (selected ? '' : xtra + periodCard + supportCard() + preBar + offside) + pitch + benchHead + benchHTML +
+    (selected ? '' : xtra + periodCard + installBar() + supportCard() + preBar + offside) + pitch + benchHead + benchHTML +
     (selected ? selbar(st) : hint) +
     /* Start a new shift is only needed once the shift clock has run out; the clock screen always has it */
     '<div class="linkrow"><button class="linkbtn" id="undo">Undo last</button>'+
@@ -1930,6 +1931,7 @@ function renderField(){
   const fe = document.getElementById("f-endper");
   if(fe) fe.addEventListener("click", ()=>modal("End period "+S.game.period+"?", "The clock stops and minutes stop counting.", "End period", endPeriodNow));
   const ci = document.getElementById("f-checkin"); if(ci) ci.addEventListener("click", openCheckIn);
+  bindInstall(document.getElementById("v-field"));
   const fl = document.getElementById("f-lineup"); if(fl) fl.addEventListener("click", openLineups);
   /* with Keep next shift ready off (the default), this is how a plan gets made: build it, then show it */
   const goNext = document.getElementById("plan-next");
@@ -3098,7 +3100,7 @@ function renderHelp(){
       q("Will I lose everything if I close the tab?",
         "Your roster, settings and the game in progress save automatically. Before a big day, use <b>Save backup file</b> on the Setup tab — that is your insurance against a cleared cache or a new phone.")+
       q("Can I put this on my home screen?",
-        "Yes, and you should. In Safari tap Share then <b>Add to Home Screen</b>; in Chrome it's the menu then <b>Install app</b> or <b>Add to Home screen</b>. It then opens full screen with no address bar and runs with no signal at all.")+
+        "Yes, and you should. The top of <b>Setup</b> has <b>Add it to your home screen</b>: in Chrome that's an <b>Install the app</b> button, and on an iPhone it tells you where Safari hides it (Share, then <b>Add to Home Screen</b>). It then opens full screen with no address bar and runs with no signal at all.")+
       q("Something looks wrong.",
         "<b>Undo last</b> on the Field tab steps back one change at a time and says what it undid. Minutes are worked out from the list of changes in History, so fixing a change there fixes the minutes too.")+
     '</div>'+
@@ -3111,6 +3113,7 @@ function renderSetup(){
   const hasGK = sp.bands.indexOf("GK") >= 0, midGame = S.game.log.length > 0, preset = currentPreset();
   document.getElementById("v-setup").innerHTML =
     '<div class="row" style="margin-bottom:10px"><button class="btn" id="s-help-top">How it works</button></div>'+
+    installCard()+
     '<div class="card"><h2>Teams</h2><div class="muted" style="margin-bottom:8px">This is <b>'+esc(activeTeam().name)+'</b>'+(TEAMS.list.length > 1 ? ', one of '+TEAMS.list.length+' teams' : '')+'. Each team keeps its own roster, settings, minutes and history. Sun mode, sound and vibration are the same for every team.</div><div class="row"><button class="btn" id="t-switch">'+(TEAMS.list.length > 1 ? "Switch or add" : "Add a team")+'</button><button class="btn ghost" id="t-rename">Rename</button></div>'+(TEAMS.list.length > 1 ? '<button class="btn warn wide" id="t-delete" style="margin-top:8px">Delete this team</button>' : '')+'</div>'+
     '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b>'+tipBtn("adv")+'<div class="muted">Enable '+esc(sp.advBlurb)+'.</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
     '<div class="card"><h2>Game format</h2>'+
@@ -3168,6 +3171,7 @@ function renderSetup(){
   document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
   document.getElementById("s-help").addEventListener("click", ()=>openView("help"));
   document.getElementById("s-help-top").addEventListener("click", ()=>openView("help"));
+  bindInstall(document.getElementById("v-setup"));
   bindTog("s-support", v => S.settings.supportNotes = v);
   bindTog("s-extra", v => S.settings.extraTime = v);
   bindTog("s-mix", v => { S.settings.mixLines = v; S.game.next = null; });
@@ -3397,6 +3401,61 @@ function openScore(){
     push(evs); closeModal(); render();
     toast(bball ? "Opponent "+OPPB[t] : "Opponent "+OPPB[t].toLowerCase()+(gk ? " — goal against "+first(gk.id) : ""));
   }));
+}
+
+/* ---------------- add to home screen ----------------
+   Chrome (Android and desktop) offers to install a page with a manifest and a service worker, but
+   only through its own menu unless the page asks. It hands us the offer in beforeinstallprompt; we
+   keep it and show a button. Safari on iPhone never fires it, so there we say where the button is. */
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault(); installPrompt = e;
+  if(activeTab === "setup" || activeTab === "field") render();
+});
+window.addEventListener("appinstalled", ()=>{
+  installPrompt = null; S.settings.installHidden = true; save(); render();
+  toast("Everyone Plays is on your home screen");
+});
+function isInstalled(){
+  try{ return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true; }
+  catch(e){ return false; }
+}
+function canInstall(){ return !!installPrompt && !isInstalled(); }
+function installHow(){
+  const ua = navigator.userAgent || "";
+  if(/iPhone|iPad|iPod/.test(ua)) return "In Safari, tap the Share button, then <b>Add to Home Screen</b>.";
+  if(/Android/.test(ua)) return "Open your browser's menu, then <b>Install app</b> or <b>Add to Home screen</b>.";
+  return "Use your browser's menu — in Chrome, <b>Install</b> in the address bar or the menu.";
+}
+function doInstall(){
+  const e = installPrompt; if(!e) return;
+  installPrompt = null;
+  try{
+    e.prompt();
+    Promise.resolve(e.userChoice).then(r => {
+      if(!r || r.outcome !== "accepted") toast("You can add it later from Setup");
+      render();
+    }).catch(()=>{});
+  }catch(err){ toast("Your browser wouldn't show the prompt — use its menu instead"); }
+  render();
+}
+/* Setup always says how; Field asks once, before kickoff, and only when the browser will prompt. */
+function installCard(){
+  if(isInstalled()) return '<div class="card"><b>Installed.</b> <span class="muted">Everyone Plays is on your home screen. It opens full screen and works with no signal.</span></div>';
+  if(canInstall()) return '<div class="card" style="border-color:var(--on)"><b>Add it to your home screen</b><div class="muted" style="margin-top:4px">It opens full screen like an app, works with no signal, and keeps your teams and history.</div>'+
+    '<div class="row" style="margin-top:8px"><button class="btn primary" id="s-install">Install the app</button></div></div>';
+  return '<div class="card"><b>Add it to your home screen</b><div class="muted" style="margin-top:4px">'+installHow()+' It then opens full screen, works with no signal, and keeps your teams and history.</div></div>';
+}
+function installBar(){
+  if(!canInstall() || S.settings.installHidden || S.game.log.length) return "";
+  return '<div class="card" style="border-color:var(--on);margin-bottom:10px"><b>Add this to your home screen?</b> <span class="muted">It opens like an app and works with no signal.</span>'+
+    '<div class="row" style="margin-top:8px"><button class="btn primary" id="f-install">Install</button><button class="btn ghost" id="f-installno">Not now</button></div></div>';
+}
+function bindInstall(root){
+  const go = root.querySelector("#s-install") || root.querySelector("#f-install");
+  if(go) go.addEventListener("click", doInstall);
+  const no = root.querySelector("#f-installno");
+  if(no) no.addEventListener("click", ()=>{ S.settings.installHidden = true; save(); render(); toast("You can add it later from Setup"); });
 }
 
 /* Register the service worker when we're on a real origin. Opened straight from a

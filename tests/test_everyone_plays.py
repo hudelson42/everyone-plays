@@ -1162,6 +1162,54 @@ def main():
         check("no sport overflows sideways", not pick["overflow"], str(pick["overflow"]))
 
         # ---------------------------------------------------------------
+        section("Add to home screen")
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        inst = pg.evaluate("""(() => {
+          const r = {};
+          S.settings.installHidden = false; S.game = newGame(); invalidate();
+          activeTab = 'setup'; render();
+          r.noButtonYet = !document.getElementById('s-install');
+          r.tellsHow = /Add it to your home screen/.test(document.getElementById('v-setup').textContent);
+          /* stand in for Chrome's offer */
+          let prompted = 0;
+          const offer = () => { const e = new Event('beforeinstallprompt');
+            e.prompt = () => { prompted++; }; e.userChoice = Promise.resolve({ outcome: 'dismissed' });
+            window.dispatchEvent(e); };
+          offer();
+          activeTab = 'setup'; render(); r.button = !!document.getElementById('s-install');
+          activeTab = 'field'; render(); r.bar = !!document.getElementById('f-install');
+          document.getElementById('f-installno').click();
+          r.dismissed = !document.getElementById('f-install') && S.settings.installHidden === true && SHARED.indexOf('installHidden') >= 0;
+          activeTab = 'setup'; render(); r.stillOnSetup = !!document.getElementById('s-install');
+          document.getElementById('s-install').click();
+          r.prompted = prompted;
+          activeTab = 'setup'; render(); r.spent = !document.getElementById('s-install');
+          /* never during a game */
+          offer(); S.settings.installHidden = false;
+          push([{ type: 'NOTE', note: 'kickoff' }]);
+          activeTab = 'field'; render(); r.midGame = !document.getElementById('f-install');
+          S.game = newGame(); invalidate();
+          /* once installed, it says so instead of asking */
+          const realMM = window.matchMedia;
+          window.matchMedia = q => ({ matches: /standalone/.test(q), media: q, addListener(){}, removeListener(){},
+                                      addEventListener(){}, removeEventListener(){} });
+          activeTab = 'setup'; render();
+          r.installedSays = /Installed\\./.test(document.getElementById('v-setup').textContent) && !document.getElementById('s-install');
+          activeTab = 'field'; render(); r.installedNoBar = !document.getElementById('f-install');
+          window.matchMedia = realMM;
+          S.settings.installHidden = false; activeTab = 'field'; render();
+          return r; })()""")
+        check("with no offer from the browser, Setup says how to add it by hand",
+              inst["noButtonYet"] and inst["tellsHow"], str(inst))
+        check("the browser's offer becomes an Install button on Setup and a card on Field",
+              inst["button"] and inst["bar"], str(inst))
+        check("Not now hides the Field card on this phone, and Setup still offers it",
+              inst["dismissed"] and inst["stillOnSetup"], str(inst))
+        check("Install hands the offer to the browser, once", inst["prompted"] == 1 and inst["spent"], str(inst))
+        check("the install card never shows during a game", inst["midGame"], str(inst))
+        check("once installed it says so instead of asking", inst["installedSays"] and inst["installedNoBar"], str(inst))
+
+        # ---------------------------------------------------------------
         section("Persistence")
         pg.evaluate("Store.save(S)")
         pg.wait_for_timeout(300)

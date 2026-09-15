@@ -6,7 +6,9 @@ signal required.
 
 **Use it here:** https://hudelson42.github.io/everyone-plays/
 
-Add it to your home screen and it opens like an app.
+Add it to your home screen and it opens like an app. The top of the **Setup**
+tab has an **Install the app** button in Chrome, and tells iPhone users where
+Safari keeps **Add to Home Screen**.
 
 ## What it does
 

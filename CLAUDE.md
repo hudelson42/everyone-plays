@@ -297,6 +297,15 @@ Attendance is the `present` snapshot taken at kickoff, plus anyone who played.
   mid-period with players on the field. `nextPeriod()` clears `pausedAt`, so
   halftime doesn't count.
 
+## Installing
+
+Chrome hands the page its install offer in `beforeinstallprompt`; it's kept in
+`installPrompt` and spent by `doInstall()`. Setup always shows `installCard()`
+(button, instructions, or "Installed"), and Field shows `installBar()` once
+before kickoff, dismissible (`installHidden`, per phone in `SHARED`). iOS Safari
+never fires the event, so `installHow()` says where Safari's Add to Home Screen
+is. Don't show the bar mid-game.
+
 ## Service worker
 
 Network-first for the page so coaches with signal get updates, cache-first for
