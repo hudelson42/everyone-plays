@@ -112,6 +112,12 @@ begins it. It doesn't switch tabs on its own; the Field and Next tabs say what's
 happening. Only the last period sets `periodOver`, and START then offers a new
 game. Coaches used to have to find the Clock tab to start period 2.
 
+**Extra time is on by default** (`extraTime`). At full time the buzzer goes once
+(`g.fullTime`) and the clock keeps running, so stoppage time counts toward
+minutes; `periodElapsed()` is only capped when the setting is off. Field shows
+an Extra time card with End period, and the top bar says "extra time". The
+referee ends the period, not the app.
+
 **A loaded lineup never leaves a spot open if someone can fill it.**
 `loadLineup()` places saved players first. `fillOpenSpots()` then gives any spot
 that would go on empty (nothing planned, nobody standing there) to the fairest
@@ -119,11 +125,20 @@ available player, and the toast names them. Save on the Next tab saves the plan
 (`saveLineup(name, true)` uses `resolvePlan()`); Save from the field saves the
 field.
 
-**The whole field fits on one screen.** Pitch cards are capped at 92 px wide
-with 40 px photos (`pitchSize()`). After each render, `fitPitch()` shrinks the
-photos (down to 24 px), then goes tight, until the pitch fits below whatever is
-above it and above the selected-player bar. While a player is selected, the
-cards above the field hide. Rotating the phone re-renders. The selected-player bar is sticky with `z-index:20`,
+**The whole field fits on one screen, bench included.** Pitch cards are capped
+at 92 px wide with 40 px photos (`pitchSize()`). A card is just photo, first
+name, and one line with position code and time — no box, no band labels. Status
+(goalie, NEXT, stale, sin bin) is a ring around the photo plus a small label on
+its top edge. The bench is one line: `renderField()` narrows its cards to share
+the width (`--bw`, `--bavs`). After each render, `fitPitch()` first goes tight
+(less spacing) if the bench would fall below the screen, and only shrinks
+photos (down to 24 px) if the pitch alone still doesn't fit. While a player is
+selected, the cards above the field hide. Field's top row is the live strip on
+the left half and the team button on the right, even with one team. There is no
+Up next strip; the coach found it added nothing.
+
+**Two bench players can't swap**, so tapping one then another just selects the
+second (on Next, the same for two players who aren't in the plan). Rotating the phone re-renders. The selected-player bar is sticky with `z-index:20`,
 and `#pitch` uses `isolation:isolate` so the bands' `z-index` can't paint over
 it. A real Android test showed oversized cards covering its buttons.
 

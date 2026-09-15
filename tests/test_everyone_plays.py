@@ -246,10 +246,10 @@ def main():
         section("Periods")
         pg.evaluate(SEED, [ROSTER, 7, False])
         brk = pg.evaluate("""(() => {
-          S.settings.periods = 2; S.settings.periodLen = 25; activeTab = 'field'; render();
+          S.settings.periods = 2; S.settings.periodLen = 25; S.settings.extraTime = false; activeTab = 'field'; render();
           S.game.running = true; S.game.startedAt = Date.now() - 1000; S.game.base = 1500;
           tick();
-          const at = { period: S.game.period, over: S.game.periodOver, onBreak: S.game.onBreak, tab: activeTab,
+          const at ={ period: S.game.period, over: S.game.periodOver, onBreak: S.game.onBreak, tab: activeTab,
                        card: document.querySelector('#v-field .card b') && document.querySelector('#v-field .card b').textContent,
                        label: document.getElementById('tb-period').textContent };
           startClock();
@@ -283,6 +283,31 @@ def main():
           S.game = newGame(); invalidate(); render(); return r; })()""")
         check("a game saved mid-break by an older version starts its next period",
               legacy_break["period"] == 2 and legacy_break["running"], str(legacy_break))
+
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        xt = pg.evaluate("""(() => {
+          S.settings.extraTime = true; S.settings.periods = 2; S.settings.periodLen = 25;
+          activeTab = 'field'; selected = null; invalidate(); render();
+          const r = { dflt: DEFAULTS.settings.extraTime };
+          S.game.running = true; S.game.startedAt = Date.now() - 30000; S.game.base = 1500;
+          tick();
+          r.period = S.game.period; r.onBreak = S.game.onBreak; r.over = S.game.periodOver;
+          r.elapsed = Math.round(periodElapsed()); r.label = document.getElementById('tb-period').textContent;
+          const btn = document.getElementById('f-endper'); r.card = !!btn;
+          r.extra = (document.querySelector('#v-field [data-extra]') || {}).textContent;
+          const minsBefore = Math.round(compute()[S.roster[0].id].total);
+          if (btn) { btn.click(); document.getElementById('modalok').click(); }
+          r.after = { period: S.game.period, onBreak: S.game.onBreak, running: S.game.running,
+                      prior: Math.round(S.game.priorTotal), mins: Math.round(compute()[S.roster[0].id].total), minsBefore };
+          S.settings.extraTime = false; S.game = newGame(); invalidate(); render();
+          return r; })()""")
+        check("extra time is on by default", xt["dflt"] is True, str(xt))
+        check("with extra time on, the clock keeps running past full time",
+              xt["period"] == 1 and not xt["onBreak"] and not xt["over"] and xt["elapsed"] >= 1530
+              and "extra time" in xt["label"] and xt["extra"] == "+0:30", str(xt))
+        check("ending the period from Field keeps the extra minutes and moves on",
+              xt["card"] and xt["after"]["period"] == 2 and xt["after"]["onBreak"] and not xt["after"]["running"]
+              and xt["after"]["prior"] >= 1530 and xt["after"]["mins"] >= 1530, str(xt))
 
         # ---------------------------------------------------------------
         section("Undo and shift numbers")
@@ -724,6 +749,28 @@ def main():
         check("player cards stay compact on a 412 px phone", fit["h"] <= 115 and fit["w"] <= 92, str(fit))
         check("nothing on the field covers the selected-player buttons", not fit["covered"], str(fit))
 
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        look = pg.evaluate("""(() => {
+          activeTab = 'field'; selected = null; render(); document.querySelector('main').scrollTop = 0; render();
+          const chips = [...document.querySelectorAll('#v-field #bench .chip')];
+          const tops = new Set(chips.map(c => Math.round(c.getBoundingClientRect().top)));
+          const cs = getComputedStyle(document.querySelector('#v-field .band .chip:not(.empty)'));
+          const strip = document.querySelector('#v-field .toprow .modestrip').getBoundingClientRect();
+          const team = document.querySelector('#v-field .toprow .teambar');
+          const tr = team ? team.getBoundingClientRect() : null;
+          const main = document.querySelector('main').getBoundingClientRect();
+          const photo = document.querySelector('#v-field .band .chip .av, #v-field .band .chip .avn').getBoundingClientRect().height;
+          return { n: chips.length, rows: tops.size, border: cs.borderTopColor, bg: cs.backgroundColor, photo: Math.round(photo),
+                   upnext: !!document.querySelector('#v-field .upnext'),
+                   halves: !!tr && Math.abs(strip.width - tr.width) < 2 && strip.right <= tr.left && Math.abs(strip.top - tr.top) < 2,
+                   benchVisible: document.querySelector('#v-field #benchzone').getBoundingClientRect().bottom <= main.bottom + 1 }; })()""")
+        check("the bench fits on one line", look["n"] >= 6 and look["rows"] == 1, str(look))
+        check("no box around players on the field, and no Up next strip",
+              look["border"] == "rgba(0, 0, 0, 0)" and look["bg"] == "rgba(0, 0, 0, 0)" and not look["upnext"], str(look))
+        check("the live strip and the team button share the top row, half each", look["halves"], str(look))
+        check("field and bench both fit on a 412 px phone without shrinking photos",
+              look["benchVisible"] and look["photo"] >= 38, str(look))
+
         misfits = []
         for (w, h, size, form, adv) in ((412, 760, 7, 0, True), (390, 700, 7, 0, False), (412, 800, 11, 1, True)):
             pg.set_viewport_size({"width": w, "height": h})
@@ -824,6 +871,25 @@ def main():
         check("every setting has a ? explanation", not tips["missing"], f"missing: {tips['missing']}")
         check("tapping ? shows the note, tapping elsewhere closes it", tips["shown"] and tips["closed"], str(tips))
         check("tapping ? on a number setting doesn't open the keyboard", tips["noFocus"], str(tips))
+
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        taps = pg.evaluate("""(() => {
+          S.settings.confirmChanges = true; activeTab = 'field'; selected = null; render();
+          const b = [...document.querySelectorAll('#v-field #bench [data-chip]')].map(e => e.dataset.chip);
+          document.querySelector('#v-field #bench [data-chip="' + b[0] + '"]').click();
+          document.querySelector('#v-field #bench [data-chip="' + b[1] + '"]').click();
+          const r = { field: selected && selected.id, want: b[1],
+                      modal: document.getElementById('modalwrap').classList.contains('show') };
+          selected = null; activeTab = 'next'; S.game.next = null; S.game.planCleared = true; nextSel = null; render();
+          const pool = [...document.querySelectorAll('#v-next #poolzone [data-chip]')].map(e => e.dataset.chip);
+          document.querySelector('#v-next #poolzone [data-chip="' + pool[0] + '"]').click();
+          document.querySelector('#v-next #poolzone [data-chip="' + pool[1] + '"]').click();
+          r.next = nextSel && nextSel.id; r.wantNext = pool[1];
+          nextSel = null; closeModal(); activeTab = 'field'; render();
+          return r; })()""")
+        check("tapping a second bench player selects them instead of asking to swap",
+              taps["field"] == taps["want"] and not taps["modal"], str(taps))
+        check("the same goes for two unplanned players on Next", taps["next"] == taps["wantNext"], str(taps))
 
         # ---------------------------------------------------------------
         section("Persistence")

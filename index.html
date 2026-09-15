@@ -116,6 +116,16 @@ body.sun #tipbubble{background:#fff;color:#000;border-color:#000}
 .modestrip.live{background:rgba(62,207,142,.12);color:var(--on);border:1px solid var(--on)}
 .modestrip.plan{background:rgba(242,179,61,.12);color:var(--next);border:1px dashed var(--next)}
 body.sun .modestrip.live,body.sun .modestrip.plan{background:#fff}
+/* Field's top row: the live strip on the left half, the team on the right */
+.toprow{display:flex;gap:8px;margin:-4px 0 8px}
+.toprow>*{flex:1 1 0;min-width:0;margin:0}
+.toprow .modestrip{align-items:center;flex-wrap:wrap;column-gap:6px;row-gap:0;min-height:var(--tap)}
+.teambar.compact{flex-direction:column;align-items:flex-start;justify-content:center;gap:0;padding:2px 10px}
+.teambar.compact b{flex:none;width:100%;font-size:14px}
+.teambar.compact .muted{font-size:10px}
+.xtra{display:flex;align-items:center;gap:10px;border-color:var(--alert);margin-bottom:8px;padding:8px 10px}
+.xtra>div{flex:1;min-width:0}
+.xtra .btn{flex:none}
 #v-field #pitch{border:2px solid var(--on)}
 #v-next #pitch{border:2px dashed var(--next);background-image:repeating-linear-gradient(135deg,rgba(242,179,61,.08) 0 14px,transparent 14px 28px)}
 nav#tabs button.active{box-shadow:inset 0 3px 0 var(--on)}
@@ -136,7 +146,7 @@ body.sun .seg button.on{color:#fff;background:var(--on)}
 /* ---------- pitch ---------- */
 #pitch{
   background:var(--turf);border:1px solid var(--line);border-radius:var(--r);
-  padding:10px 8px;margin-bottom:12px;position:relative;overflow:hidden;
+  padding:6px;margin-bottom:8px;position:relative;overflow:hidden;
   isolation:isolate; /* keeps the bands' z-index inside the pitch, so the selected-player bar can sit on top */
 }
 #pitch::before{
@@ -146,28 +156,27 @@ body.sun .seg button.on{color:#fff;background:var(--on)}
   content:"";position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;
   border:1px solid var(--turf-line);border-radius:50%;
 }
-.band{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:6px 0}
-.bandlab{position:relative;z-index:1;font-size:10px;color:var(--ink-dim);text-align:center;margin-top:2px}
-body.sun .bandlab{color:#000}
+.band{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:4px 0}
 
 #pitch{--cw:98px;--avs:52px}
+/* No box around a player: the photo, the name, and one line with position and time. Status shows
+   as a ring around the photo and a small label over its top edge. */
 .chip{
-  width:80px;min-height:80px;border-radius:var(--r);border:1px solid var(--line);
-  background:var(--panel);display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:2px;padding:5px 3px;position:relative;
+  width:80px;min-height:80px;border-radius:var(--r);border:1px solid transparent;
+  background:transparent;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:1px;padding:6px 3px 2px;position:relative;
 }
-.band .chip{width:var(--cw);min-height:0;gap:2px;padding:12px 3px 6px}
+.band .chip{width:var(--cw);min-height:0}
 .band .chip .av,.band .chip .avn{
   width:var(--avs);height:var(--avs);font-size:calc(var(--avs) * .42)
 }
-.band .chip .nm{max-width:calc(var(--cw) - 8px);font-size:14px;font-weight:700}
-.band .chip .tm{font-size:13px}
-#pitch.tight{padding:6px}
-#pitch.tight .band{margin:3px 0}
-#pitch.tight .bandlab{display:none}
-#pitch.tight .band .chip{padding:11px 2px 3px;gap:0}
+.band .chip .nm{max-width:calc(var(--cw) - 6px);font-size:14px;font-weight:700}
+.chip .meta{display:flex;gap:5px;align-items:baseline;justify-content:center;line-height:1.15;white-space:nowrap}
+#pitch.tight{padding:3px 6px}
+#pitch.tight .band{margin:1px 0}
+#pitch.tight .band .chip{padding:5px 2px 1px;gap:0}
 #ghost{position:fixed;z-index:120;pointer-events:none;transform:translate(-50%,-50%) scale(1.06);
-  opacity:.96;box-shadow:0 10px 26px rgba(0,0,0,.55);border-color:var(--next)}
+  opacity:.96;box-shadow:0 10px 26px rgba(0,0,0,.55);border-color:var(--next);background:var(--panel)}
 .chip.dragging{opacity:.3}
 .droptarget{outline:3px dashed var(--next);outline-offset:2px}
 #benchzone.droptarget{outline:3px dashed var(--alert);border-radius:var(--r)}
@@ -194,29 +203,32 @@ body.sun .avn{color:#fff;border:1px solid #000}
   font-size:13px;font-weight:700;color:#06150E;
 }
 body.sun .chip .avn{color:#fff;border:1px solid #000}
-.chip .nm{font-size:13px;font-weight:700;max-width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip .nm{font-size:13px;font-weight:700;max-width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.15}
 .chip .tm{font-size:12px;color:var(--ink-dim)}
-.chip .pc{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--ink-dim);line-height:1}
+.chip .pc{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--ink-dim)}
 body.sun .chip .pc{color:#000}
-.chip.sel{outline:3px solid var(--next);outline-offset:-1px}
-.chip.empty{border-style:dashed;color:var(--ink-dim);font-size:11px;justify-content:center}
-.chip.gkslot{border-color:var(--gk)}
-.chip.next{border-color:var(--next);box-shadow:inset 0 0 0 1px var(--next)}
-.chip.stale{border-color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
-.chip.sinbin{border-color:var(--alert);box-shadow:inset 0 0 0 2px var(--alert)}
-.chip{padding-top:11px}
-.chip .flag{position:absolute;top:2px;left:0;right:0;text-align:center;font-size:10px;letter-spacing:.03em;color:var(--next);font-weight:700}
+.chip.sel{outline:3px solid var(--next);outline-offset:-1px;background:rgba(242,179,61,.14)}
+.chip.empty{border:1px dashed var(--line);background:var(--panel);color:var(--ink-dim);font-size:11px;justify-content:center;padding:5px 3px}
+.chip.empty.gkslot{border-color:var(--gk)}
+.chip.gkslot .av,.chip.gkslot .avn{box-shadow:0 0 0 2px var(--gk)}
+.chip.next .av,.chip.next .avn{box-shadow:0 0 0 2px var(--next)}
+.chip.stale .av,.chip.stale .avn{box-shadow:0 0 0 2px var(--warn)}
+.chip.sinbin .av,.chip.sinbin .avn{box-shadow:0 0 0 3px var(--alert)}
+.chip .flag{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:1;font-size:9px;line-height:12px;padding:0 4px;
+  border-radius:6px;background:var(--bg);white-space:nowrap;letter-spacing:.03em;color:var(--next);font-weight:700}
+.band .chip .flag{background:var(--turf)}
 
-#benchzone,#poolzone{min-height:96px;padding-bottom:8px}
+#benchzone{min-height:60px;padding-bottom:4px}
+#poolzone{min-height:96px;padding-bottom:8px}
 #poolzone.droptarget{outline:3px dashed var(--alert);border-radius:var(--r)}
 #bench{display:flex;flex-wrap:wrap;gap:6px}
+/* Field's bench sits on one line: renderField sizes the cards to fit (--bw, --bavs) */
+#benchzone #bench{gap:4px}
+#benchzone .chip{width:var(--bw,80px);min-height:0;padding:6px 1px 2px}
+#benchzone .chip .av,#benchzone .chip .avn{width:var(--bavs,30px);height:var(--bavs,30px);font-size:calc(var(--bavs,30px) * .42)}
+#benchzone .chip .nm{max-width:calc(var(--bw,80px) - 4px);font-size:12px}
+#v-field h3.benchh{margin:2px 0 2px}
 .hint{font-size:12px;color:var(--ink-dim);margin:8px 0}
-.upnext{display:flex;align-items:center;gap:9px;padding:8px 10px;margin-bottom:10px;
-  border:1px solid var(--next);border-radius:var(--r);background:var(--panel);overflow:hidden}
-.uplab{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--next);flex:none;
-  text-transform:uppercase;line-height:1.1;max-width:42px}
-.uppl{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;white-space:nowrap;min-width:0}
-.uppl .av,.uppl .avn{width:26px;height:26px;font-size:11px;flex:none}
 .startrow{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.4}
 .startrow div b{color:var(--on)}
 .startrow>b:first-child{flex:none;width:24px;height:24px;border-radius:50%;background:var(--on);color:#06150E;
@@ -273,8 +285,8 @@ table.grid td.t button,table.grid td.t .tot{
 }
 table.grid td.t .tot .mono{font-weight:700}
 .cnt{font-size:9px;color:var(--ink-dim);line-height:1.1}
-.chip.holding{opacity:.5;border-style:dashed}
-.chip.onnow{border-color:var(--on)}
+.chip.holding{opacity:.5}
+.chip.onnow .av,.chip.onnow .avn{box-shadow:0 0 0 2px var(--on)}
 nav#tabs button{font-size:11px;font-weight:600}
 .pname{display:flex;align-items:center;gap:6px;min-width:0}
 .pname b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -466,14 +478,14 @@ const DEFAULTS = {
     advanced:false, teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:5,
     minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:null /* no limit */, rotate:true, freshPositions:true,
     confirmChanges:true, autoPlan:false, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
-    seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true, rotateKeeper:true
+    seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true, rotateKeeper:true, extraTime:true
   },
   game:newGame(), archive:[], lineups:[]
 };
 function newGame(){
   return { id:uid(), log:[], seq:0, shift:1, period:1, running:false, startedAt:null, base:0,
            priorTotal:0, periodOver:false, shiftStart:0, warned:false, alerted:false, adj:{}, next:null,
-           date:null, opponent:"", present:null, pausedAt:null, nagged:false, onBreak:false };
+           date:null, opponent:"", present:null, pausedAt:null, nagged:false, onBreak:false, fullTime:false };
 }
 /* Turn whatever came out of storage or a backup into a complete state object: settings added
    since it was saved get their defaults, and the phone-level settings come from the index. */
@@ -486,7 +498,7 @@ function hydrate(saved){
   if(!s.lineups) s.lineups = []; if(!s.archive) s.archive = [];
   s.archive = s.archive.map(a => upgradeGame(a, s.roster)).filter(Boolean);
   if(!s.game.shift) s.game.shift = 1; s.game.log.forEach(e => { if(!e.sh) e.sh = 1; if(!e.eid) e.eid = uid(); });
-  if(s.game.running){ s.game.base = Math.min(s.game.base, s.settings.periodLen*60); s.game.running = false; s.game.startedAt = null; s.game.pausedAt = Date.now(); }
+  if(s.game.running){ if(s.settings.extraTime === false) s.game.base = Math.min(s.game.base, s.settings.periodLen*60); s.game.running = false; s.game.startedAt = null; s.game.pausedAt = Date.now(); }
   return s;
 }
 let S = JSON.parse(JSON.stringify(DEFAULTS));
@@ -590,8 +602,9 @@ async function restoreTeams(o){
   S = hydrate(await readTeam(activeTeam()));
   resetView(); invalidate(); render(); toast("Loaded "+TEAMS.list.length+(TEAMS.list.length === 1 ? " team" : " teams"));
 }
-function teamBar(id, always){
+function teamBar(id, always, compact){
   if(!always && TEAMS.list.length < 2) return "";
+  if(compact) return '<button class="teambar compact" id="'+id+'"><span class="muted">Team ▸</span><b>'+esc(activeTeam().name)+'</b></button>';
   return '<button class="teambar" id="'+id+'"><span class="muted">Team</span><b>'+esc(activeTeam().name)+'</b>'+
     '<span class="muted">'+(TEAMS.list.length > 1 ? "Switch" : "Add a team")+' ▸</span></button>';
 }
@@ -619,7 +632,12 @@ function openTeams(){
 function periodElapsed(){
   const g=S.game;
   let e = g.base + (g.running ? (Date.now()-g.startedAt)/1000 : 0);
-  return Math.min(e, S.settings.periodLen*60);
+  /* with extra time on, the clock runs past full time until the coach ends the period */
+  return S.settings.extraTime === false ? Math.min(e, S.settings.periodLen*60) : e;
+}
+function inExtraTime(){
+  const g = S.game;
+  return S.settings.extraTime !== false && !g.periodOver && !g.onBreak && periodElapsed() >= S.settings.periodLen*60;
 }
 function gameElapsed(){ return S.game.priorTotal + periodElapsed(); }
 function periodRemaining(){ return Math.max(0, S.settings.periodLen*60 - periodElapsed()); }
@@ -780,17 +798,17 @@ function fitPitch(viewId){
   const view = document.getElementById(viewId), main = document.querySelector("main");
   const pitch = view ? view.querySelector("#pitch") : null;
   if(!pitch || !main || !main.clientHeight) return;
-  const room = () => {
-    const bar = view.querySelector(".selbar");
-    const top = pitch.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
-    return main.clientHeight - top - 10 - (bar ? bar.offsetHeight + 12 : 0);
-  };
-  const over = pitch.offsetHeight - room();
+  /* how far an element's bottom sits past the bottom of the screen, or past the selected-player bar */
+  const bar = view.querySelector(".selbar"), bench = bar ? null : view.querySelector("#benchzone");
+  const past = el => el.getBoundingClientRect().bottom - main.getBoundingClientRect().top + main.scrollTop
+    - (main.clientHeight - 8 - (bar ? bar.offsetHeight + 12 : 0));
+  /* tighten the spacing first, so the bench fits too; photos keep their size unless the pitch alone won't fit */
+  if(past(bench || pitch) > 0) pitch.classList.add("tight");
+  const over = past(pitch);
   if(over <= 0) return;
   const rows = pitch.querySelectorAll(".band").length || 1;
   const avs = parseFloat(pitch.style.getPropertyValue("--avs")) || 40;
   pitch.style.setProperty("--avs", Math.max(24, Math.floor(avs - over / rows)) + "px");
-  if(pitch.offsetHeight - room() > 0) pitch.classList.add("tight");
 }
 
 /* ---------------- events ---------------- */
@@ -815,6 +833,7 @@ function undoLast(){
     if(!g.periodOver){ g.priorTotal -= pe.base; g.period = pe.period; }
     g.base = pe.base; g.periodOver = false; g.onBreak = false; g.shift = pe.shift; g.shiftStart = pe.shiftStart;
     g.next = null; g.warned = true; g.alerted = true; g.pausedAt = Date.now(); g.nagged = false;
+    g.fullTime = pe.base >= S.settings.periodLen*60;
   }
   while(log.length && log[log.length-1].g === gid) log.pop();
   invalidate(); save(); render(); toast("Undid: "+describeGroup(group));
@@ -1260,7 +1279,7 @@ function endPeriodNow(){
 /* Doesn't switch tabs when the buzzer ends a period on its own — the Field and Next tabs say
    what's happening instead. A coach who taps "Start period" on the clock screen lands on the lineup. */
 function nextPeriod(toLineup){
-  S.game.priorTotal += S.game.base; S.game.base = 0; S.game.period++; S.game.periodOver = false; S.game.pausedAt = null; S.game.onBreak = true;
+  S.game.priorTotal += S.game.base; S.game.base = 0; S.game.period++; S.game.periodOver = false; S.game.pausedAt = null; S.game.onBreak = true; S.game.fullTime = false;
   beginNewShift(); save();
   if(S.settings.autoPlan){ maybeAutoPlan(); if(toLineup === true && nextCount()) activeTab = "next"; }
   render();
@@ -1269,7 +1288,11 @@ function nextPeriod(toLineup){
 function tick(){
   invalidate();
   const g = S.game, s = S.settings;
-  if(g.running && periodElapsed() >= s.periodLen*60 && !g.periodOver){ endPeriodNow(); return; }
+  if(g.running && periodElapsed() >= s.periodLen*60 && !g.periodOver){
+    if(s.extraTime === false){ endPeriodNow(); return; }
+    /* the referee ends the period, not the app: buzz once at full time and keep counting */
+    if(!g.fullTime){ g.fullTime = true; alarm("end"); save(); render(); toast("Time is up. The clock keeps running until you end period "+g.period+"."); }
+  }
   if(g.running && !g.periodOver){
     const rem = shiftRemaining(), guard = periodRemaining() <= 45;
     if(!g.warned && rem <= s.warnLead && rem > 0 && !guard && s.warnLead > 0){ g.warned = true; alarm("warn"); }
@@ -1306,7 +1329,10 @@ function paintClocks(){
   const s = S.settings;
   document.getElementById("tb-clock").textContent = fmt2(periodElapsed());
   document.getElementById("tb-period").textContent = S.game.periodOver ? (S.game.period >= s.periods ? "Game over" : "Period " + S.game.period + " over")
-    : S.game.onBreak ? "Period " + S.game.period + " ready" : "Period " + S.game.period + " of " + s.periods;
+    : S.game.onBreak ? "Period " + S.game.period + " ready"
+    : inExtraTime() ? "Period " + S.game.period + " · extra time" : "Period " + S.game.period + " of " + s.periods;
+  const extra = "+" + fmt(periodElapsed() - s.periodLen*60);
+  document.querySelectorAll("[data-extra]").forEach(el => el.textContent = extra);
   const rem = shiftRemaining();
   document.getElementById("tb-shiftval").textContent = (rem<0?"+":"") + fmt(Math.abs(rem));
   document.getElementById("tb-go").textContent = S.game.running ? "PAUSE" : "START";
@@ -1321,7 +1347,7 @@ function paintClocks(){
   if(bc){
     bc.textContent = fmt2(periodElapsed());
     const br = document.getElementById("big-shift"); if(br) br.textContent = (rem<0?"+":"") + fmt(Math.abs(rem));
-    const bp = document.getElementById("big-left"); if(bp) bp.textContent = fmt(periodRemaining()) + " left";
+    const bp = document.getElementById("big-left"); if(bp) bp.textContent = inExtraTime() ? extra + " extra time" : fmt(periodRemaining()) + " left";
   }
 }
 function paintLive(){
@@ -1418,12 +1444,15 @@ function renderField(){
       else pitch += '<button class="chip empty '+(b==="GK"?"gkslot ":"")+((selected && selected.t==="s" && selected.band===b && selected.i===i)?"sel":"")+'" data-slot="'+b+'|'+i+'">+ '+esc(posName(codes[i]))+'</button>';
     });
     extra.forEach(pid => { pitch += chip(byId(pid), st, b, "field", false, ""); });
-    pitch += '</div><div class="bandlab">'+BANDNAME[b]+(codes.length?" · "+codes.length:"")+'</div>';
+    pitch += '</div>';
   });
   pitch += '</div>';
 
-  const bench = S.roster.filter(p => !st[p.id].onBand);
-  let benchHTML = '<div id="benchzone"><div id="bench">' + (bench.length ? bench.map(p => chip(p, st, null, "bench", nextIds.includes(p.id))).join("") : '<div class="muted">Everyone on the roster is on the field.</div>') + '</div></div>';
+  /* the bench fits on one line: cards narrow to share the width, photos no bigger than the field's */
+  const bench = S.roster.filter(p => !st[p.id].onBand), nb = Math.max(1, bench.length);
+  const bw = Math.max(46, Math.min(80, Math.floor((Math.max(240, (window.innerWidth || 390) - 24) - 4*(nb-1)) / nb)));
+  const bavs = Math.min(parseInt(pitchVars.split("--avs:")[1]) || 40, bw - 8);
+  let benchHTML = '<div id="benchzone" style="--bw:'+bw+'px;--bavs:'+bavs+'px"><div id="bench">' + (bench.length ? bench.map(p => chip(p, st, null, "bench", nextIds.includes(p.id))).join("") : '<div class="muted">Everyone on the roster is on the field.</div>') + '</div></div>';
 
   const diff = nextCount() ? planDiff() : [];
   const changes = diff.length;
@@ -1444,13 +1473,10 @@ function renderField(){
     ? '<div class="row" style="margin-bottom:10px"><button class="btn" id="f-checkin">Who is here?</button>'+
       '<button class="btn" id="f-lineup">Load a lineup</button></div>' : "";
 
-  /* the question a coach asks between whistles, answered without changing tabs */
-  const upIds = nextUpIds(3);
-  const upStrip = upIds.length && S.roster.some(p => st[p.id].onBand)
-    ? '<div class="upnext"><span class="uplab">Up next</span>'+
-      upIds.map(id => { const p = byId(id);
-        return '<span class="uppl">'+avatar(p)+esc(p.name.split(" ")[0])+'</span>'; }).join("")+
-      '</div>' : "";
+  /* past full time with extra time on: the clock keeps running until the coach ends the period */
+  const xtra = inExtraTime()
+    ? '<div class="card xtra"><div><b>Extra time</b> <span class="mono" data-extra></span><div class="muted">Minutes still count.</div></div><button class="btn warn" id="f-endper">End period '+S.game.period+'</button></div>'
+    : '';
 
   if(!S.roster.length){
     document.getElementById("v-field").innerHTML =
@@ -1468,8 +1494,8 @@ function renderField(){
 
   document.getElementById("v-field").innerHTML =
     /* while a player is selected the cards above the field step aside, so field and bar both fit */
-    '<div class="modestrip live"><b>ON THE FIELD NOW</b> live</div>' +
-    (selected ? '' : teamBar("f-team") + periodCard + supportCard() + banner + preBar + upStrip) + pitch + '<h3>Bench</h3>' + benchHTML +
+    '<div class="toprow"><div class="modestrip live"><b>ON THE FIELD NOW</b> live</div>' + teamBar("f-team", true, true) + '</div>' +
+    (selected ? '' : xtra + periodCard + supportCard() + banner + preBar) + pitch + '<h3 class="benchh">Bench</h3>' + benchHTML +
     (selected ? selbar(st) : '<div class="hint">' + (formation().gk ? "" : "No keeper in this formation. ") + 'Tap a spot then a player, or two players to swap. Press and hold to drag. Changes here count as mid-shift swaps.</div>') +
     '<div class="row" style="margin:10px 0"><button class="btn" id="reset-shift">Start a new shift</button><button class="btn ghost" id="undo">Undo last</button></div>';
 
@@ -1504,6 +1530,8 @@ function renderField(){
   bindSupportCard(document.getElementById("v-field"));
   const fm =document.getElementById("f-mins"); if(fm) fm.addEventListener("click", ()=>{ activeTab = "times"; timesView = "game"; render(); });
   const fn = document.getElementById("f-newgame"); if(fn) fn.addEventListener("click", promptNewGame);
+  const fe = document.getElementById("f-endper");
+  if(fe) fe.addEventListener("click", ()=>modal("End period "+S.game.period+"?", "The clock stops and minutes stop counting.", "End period", endPeriodNow));
   const ci = document.getElementById("f-checkin"); if(ci) ci.addEventListener("click", openCheckIn);
   const fl = document.getElementById("f-lineup"); if(fl) fl.addEventListener("click", openLineups);
   /* with Keep next shift ready off (the default), this is how a plan gets made: build it, then show it */
@@ -1537,8 +1565,8 @@ function chip(p, st, band, kind, isNext, pos){
   else if(stale) flag = '<span class="flag" style="color:var(--warn)">STALE</span>';
   return '<button class="chip'+(sel?" sel":"")+(band==="GK"?" gkslot":"")+(isNext?" next":"")+(stale?" stale":"")+(sinbin?" sinbin":"")+'"'+
     (unavail?' style="opacity:.42"':'')+ ' data-chip="'+p.id+'" data-kind="'+kind+'">'+ flag + avatar(p) +
-    '<span class="nm">'+esc(p.name.split(" ")[0])+'</span>'+(pos ? '<span class="pc mono">'+esc(pos)+'</span>' : '')+
-    '<span class="tm mono" data-live="'+p.id+'|'+(kind==="field"?"stint":"total")+'"></span></button>';
+    '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="meta">'+(pos ? '<span class="pc mono">'+esc(pos)+'</span>' : '')+
+    '<span class="tm mono" data-live="'+p.id+'|'+(kind==="field"?"stint":"total")+'"></span></span></button>';
 }
 function selbar(st){
   if(selected.t === "s"){
@@ -1619,7 +1647,9 @@ function tapChip(id, kind){
   if(!selected){ selected = {t:"p", id, kind}; render(); return; }
   if(selected.t === "s"){ doPlace(id, selected.band, selected.i); selected = null; render(); return; }
   if(selected.id === id){ selected = null; render(); return; }
-  
+  /* two bench players can't swap with each other, so the second tap just picks that player instead */
+  if(selected.kind === "bench" && kind === "bench"){ selected = {t:"p", id, kind}; render(); return; }
+
   const aId = selected.id;
   confirmChange(describePair(aId, id), ()=>{ doPair(aId, id); render(); });
   selected = null; render();
@@ -1738,7 +1768,7 @@ function renderNext(){
         pitch += '<button class="chip empty'+(b==="GK"?" gkslot":"")+(on?" sel":"")+'" data-nslot="'+b+'|'+i+'">+ '+esc(posName(slotPos(b, i)))+'</button>';
       }
     });
-    pitch += '</div><div class="bandlab">'+BANDNAME[b]+' · '+slotsFor(b)+'</div>';
+    pitch += '</div>';
   });
   pitch += '</div>';
 
@@ -1748,7 +1778,7 @@ function renderNext(){
     const stale = isStale(p.id);
     return '<button class="chip'+((nextSel&&nextSel.t==="p"&&nextSel.id===p.id)?" sel":"")+(st[p.id].onBand?" onnow":"")+(stale?" stale":"")+'" data-chip="'+p.id+'" data-kind="pool">'+
       (st[p.id].onBand ? '<span class="flag" style="color:var(--on)">ON</span>' : (stale?'<span class="flag" style="color:var(--warn)">STALE</span>':''))+
-      avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="tm mono">'+fmt(st[p.id].total)+'</span></button>';
+      avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="meta"><span class="tm mono">'+fmt(st[p.id].total)+'</span></span></button>';
   }).join("") : '<div class="muted">Everyone available is in the plan.</div>') + '</div></div>';
 
   /* advanced option: who has been in goal least, since keepers are never rotated automatically */
@@ -1822,7 +1852,7 @@ function planChip(p, st, band, i, holding){
   const r = st[p.id];
   return '<button class="chip'+((nextSel&&nextSel.t==="p"&&nextSel.id===p.id)?" sel":"")+(band==="GK"?" gkslot":"")+(holding?" holding":"")+'" data-chip="'+p.id+'" data-kind="plan" data-nslot="'+band+'|'+i+'">'+
     (holding === true ? '<span class="flag" style="color:var(--ink-dim)">STAYS</span>' : holding ? '<span class="flag">MOVES</span>' : (r.onBand ? '' : '<span class="flag" style="color:var(--next)">IN</span>'))+
-    avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span>'+(code ? '<span class="pc mono">'+esc(code)+'</span>' : '')+'<span class="tm mono">'+fmt(r.total)+'</span></button>';
+    avatar(p) + '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="meta">'+(code ? '<span class="pc mono">'+esc(code)+'</span>' : '')+'<span class="tm mono">'+fmt(r.total)+'</span></span></button>';
 }
 function tapNextChip(pid){
   if(!nextSel){ nextSel = {t:"p", id:pid}; render(); return; }
@@ -1832,6 +1862,8 @@ function tapNextChip(pid){
   }
   if(nextSel.id === pid){ nextSel = null; render(); return; }
   const target = nextSlotOf(pid), mine = nextSlotOf(nextSel.id);
+  /* neither is in the plan, so there's nothing to swap: pick the second player instead */
+  if(!target && !mine){ nextSel = {t:"p", id:pid}; render(); return; }
   if(target) planInto(nextSel.id, target.band, target.i);
   else if(mine) planClear(nextSel.id);
   nextSel = null; render();
@@ -1868,7 +1900,7 @@ function renderClock(){
   document.getElementById("v-clock").innerHTML =
     '<button class="backlink" id="c-back">‹ Back</button>'+
     '<div class="card" style="text-align:center"><div class="muted">Period '+g.period+' of '+s.periods+'</div><div class="mono" id="big-clock" style="font-size:var(--fs-clock);font-weight:700;letter-spacing:-2px">00:00</div><div class="muted" id="big-left"></div><div style="margin-top:14px" class="muted">Shift clock</div><div class="mono" id="big-shift" style="font-size:34px;font-weight:700">0:00</div><div class="row" style="margin-top:14px"><button class="btn primary" id="c-toggle">'+(g.running?"Pause":"Start")+'</button><button class="btn" id="c-shift">Restart shift</button></div></div>'+
-    (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? '<button class="btn primary wide" id="c-newgame">Start a new game</button>' : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End period '+g.period+' now</button><div class="muted" style="margin-top:8px">The clock stops on its own at '+s.periodLen+' minutes. Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
+    (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? '<button class="btn primary wide" id="c-newgame">Start a new game</button>' : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End period '+g.period+' now</button><div class="muted" style="margin-top:8px">'+(s.extraTime !== false ? 'At '+s.periodLen+' minutes the buzzer goes and the clock keeps running for extra time, until you end the period.' : 'The clock stops on its own at '+s.periodLen+' minutes.')+' Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
     '<div class="card"><h2>Game controls</h2><div class="row" style="margin-bottom:8px"><button class="btn" id="c-note">Add a note</button><button class="btn ghost" id="c-undo">Undo last</button></div><button class="btn warn wide" id="c-new">New game</button><div class="muted" style="margin-top:8px">New game clears the clock and all minutes, files this game in History, and keeps your roster and settings.</div></div>';
 
   document.getElementById("c-back").addEventListener("click", goBack);
@@ -2562,7 +2594,7 @@ function renderSetup(){
     '<div class="card"><h2>Teams</h2><div class="muted" style="margin-bottom:8px">This is <b>'+esc(activeTeam().name)+'</b>'+(TEAMS.list.length > 1 ? ', one of '+TEAMS.list.length+' teams' : '')+'. Each team keeps its own roster, settings, minutes and history. Sun mode, sound and vibration are the same for every team.</div><div class="row"><button class="btn" id="t-switch">'+(TEAMS.list.length > 1 ? "Switch or add" : "Add a team")+'</button><button class="btn ghost" id="t-rename">Rename</button></div>'+(TEAMS.list.length > 1 ? '<button class="btn warn wide" id="t-delete" style="margin-top:8px">Delete this team</button>' : '')+'</div>'+
     '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b>'+tipBtn("adv")+'<div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
     '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side'+tipBtn("s-size")+'</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper'+tipBtn("s-form")+'</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
-    '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
+    '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+toggleRow("s-extra","Keep running into extra time",s.extraTime!==false)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
     '<div class="card"><h2>Alerts</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+
       (canVibrate()
         ? toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz on press and hold",s.dragBuzz!==false)
@@ -2609,6 +2641,7 @@ function renderSetup(){
   document.getElementById("s-help").addEventListener("click", ()=>openView("help"));
   document.getElementById("s-help-top").addEventListener("click", ()=>openView("help"));
   bindTog("s-support", v => S.settings.supportNotes = v);
+  bindTog("s-extra", v => S.settings.extraTime = v);
   document.getElementById("s-check").addEventListener("click", ()=>modal("Self-check", selfCheck(), null, null, "Close"));
   document.getElementById("s-dl").addEventListener("click", ()=>buildBackup().then(text => saveFile(backupName(), text, "application/json")));
   const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(), text, "application/json", "Everyone Plays backup")));
@@ -2696,7 +2729,8 @@ const TIPS = {
   "s-size": "How many players each team has on the field at once, including the goalie.",
   "s-form": "How your team lines up: how many defenders, midfielders and forwards, plus the goalie. It sets which positions appear on the field.",
   "s-periods": "How many halves or quarters in a game.",
-  "s-plen": "The length of each period. The clock stops on its own when it gets there.",
+  "s-plen": "The length of each period. The buzzer goes when the clock gets there.",
+  "s-extra": "At full time the buzzer goes but the clock keeps running, so stoppage time still counts toward minutes. End the period yourself at the whistle, from the Field tab or the clock screen. Off stops the clock right at full time.",
   "s-slen": "How often you rotate players. The shift clock at the top counts down from this.",
   "s-warn": "A short beep this many seconds before a shift ends, so you can get the next group ready. 0 turns it off.",
   "s-min": "Auto-fill won't take a player off until they've been on at least this long, so nobody is pulled right after going in.",

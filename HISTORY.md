@@ -243,6 +243,7 @@ the log, not stored here.
 | `maxSwitch` | `null` | Most players swapped front to back in one shift; `null` is no limit |
 | `rotate` | `true` | Prefer moving players between defense and attack |
 | `rotateKeeper` | `true` | Switch the goalie each shift; off holds the keeper in goal |
+| `extraTime` | `true` | At full time the buzzer goes and the clock keeps running until the coach ends the period (added 2026-09-15); off stops the clock at full time, the old behaviour |
 | `freshPositions` | `true` | Put incoming players in the open positions they've played least |
 | `autoPlan` | `false` | Keep the next shift prepared in the background (default changed to off 2026-09-14) |
 | `confirmChanges` | `true` | Confirm tap-initiated changes (drag is never confirmed) |

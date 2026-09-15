@@ -21,8 +21,11 @@ head while nine kids ask you when they're going on.
 - **Everyone tries new spots.** Subs go into the positions they've played least,
   so over a game kids rotate around the field. Turn it off if you'd rather keep
   kids where they're comfortable.
-- **A next shift, always ready.** It prepares the rotation in the background.
-  When the buzzer goes, you tap once.
+- **A next shift in one tap.** Tap Plan next shift and it builds the rotation;
+  check it and send them on. Or have it keep one ready in the background.
+- **Extra time counts.** At full time the buzzer goes but the clock keeps
+  running until you end the period, so stoppage time still counts toward
+  minutes.
 - **No needless reshuffles.** Players already on the field hold their position
   unless moving them genuinely evens things out. You can cap how many switch
   per shift on Setup.
