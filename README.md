@@ -1,7 +1,8 @@
 # Everyone Plays
 
-A substitution and shift tracker for youth soccer coaches. One HTML file, no
-account, no signal required.
+A substitution and shift tracker for youth sports coaches: soccer (and futsal),
+field hockey, lacrosse, ice hockey and basketball. One HTML file, no account, no
+signal required.
 
 **Use it here:** https://hudelson42.github.io/everyone-plays/
 
@@ -44,8 +45,15 @@ head while nine kids ask you when they're going on.
   out playing time across games, suggest who goes in goal next, and remind you
   when the clock has been left paused.
 
-Optional Advanced mode adds formations, goals, assists, shots, cards, opponent
-scoring and season totals. Leave it off and the app stays simple.
+- **Your sport.** Each team has its own sport, with that sport's positions and
+  words: left D and sweeper in soccer, point guard and center in basketball, the
+  Ice tab in hockey. Hockey rotates whole lines and defense pairs; lacrosse and
+  hockey penalties sit a player out for their length; basketball can foul
+  players out.
+
+Optional Advanced mode adds formations, the score, each sport's stats (goals,
+assists, shots, saves, cards and penalties; or points, rebounds, steals and
+fouls) and season totals. Leave it off and the app stays simple.
 
 ## Your data stays on your phone
 
@@ -60,7 +68,7 @@ the only copy that survives.
 ## Getting started
 
 1. **Roster** — add players. A name and a number is enough.
-2. **Setup** — pick your format. It ships set to 7 v 7.
+2. **Setup** — pick your sport and format. A new install starts as 7 v 7 soccer.
 3. **Field** — tap an open position, then tap the player who goes there.
 4. **START** — top left, runs the clock.
 5. When the buzzer goes, tap **Plan next shift**, check it, then **Send them on**.

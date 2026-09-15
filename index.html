@@ -11,7 +11,7 @@
 <link rel="icon" href="favicon-32.png" sizes="32x32">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Everyone Plays">
-<meta name="description" content="Substitution and playing-time tracker for youth soccer coaches. Works offline, keeps everything on your phone.">
+<meta name="description" content="Substitution and playing-time tracker for youth sports coaches: soccer, field hockey, lacrosse, ice hockey and basketball. Works offline, keeps everything on your phone.">
 <style>
 :root{
   --bg:#0E1513; --panel:#16201D; --panel2:#1D2926; --line:#2C3B36;
@@ -307,6 +307,25 @@ table.grid td.t .tot .mono{font-weight:700}
 .cnt{font-size:9px;color:var(--ink-dim);line-height:1.1}
 .chip.holding{opacity:.5}
 .chip.onnow .av,.chip.onnow .avn{box-shadow:0 0 0 2px var(--on)}
+/* each sport's playing surface, drawn with the pitch's two pseudo-elements (a center line and a circle for soccer) */
+#pitch[data-sport="fieldhockey"]::after,#pitch[data-sport="lacrosse"]::after{left:8px;right:8px;top:24%;bottom:24%;width:auto;height:auto;margin:0;border-radius:0;border:0;
+  border-top:1px dashed var(--turf-line);border-bottom:1px dashed var(--turf-line)}
+#pitch[data-sport="lacrosse"]::after{border-top-style:solid;border-bottom-style:solid}
+#pitch[data-sport="hockey"]{border-radius:26px;background-color:#16303A}
+#pitch[data-sport="hockey"]::before{height:2px;background:rgba(228,87,46,.55)}
+#pitch[data-sport="hockey"]::after{left:0;right:0;top:32%;bottom:32%;width:auto;height:auto;margin:0;border-radius:0;border:0;
+  border-top:2px solid rgba(127,178,255,.5);border-bottom:2px solid rgba(127,178,255,.5)}
+#pitch[data-sport="basketball"]{background-color:#2C2418}
+#pitch[data-sport="basketball"]::before{left:33%;right:33%;top:0;height:30%;background:none;border:1px solid var(--turf-line);border-top:0}
+#pitch[data-sport="basketball"]::after{left:12%;top:-34%;width:76%;height:74%;margin:0;border-radius:50%}
+body.sun #pitch[data-sport="hockey"],body.sun #pitch[data-sport="basketball"]{background-color:#fff}
+/* hockey lines editor */
+.linerow{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.linerow .lpos{flex:none;width:52px}
+.lslot{flex:1;min-width:0;min-height:var(--tap);padding:0 4px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel2);
+  font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lslot.empty{border-style:dashed;color:var(--ink-dim);font-weight:500}
+.lslot.sel{outline:3px solid var(--next);outline-offset:-1px}
 nav#tabs button{font-size:11px;font-weight:600}
 .pname{display:flex;align-items:center;gap:6px;min-width:0}
 .pname b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -412,11 +431,15 @@ body.sun .prow .avn{color:#fff;border:1px solid #000}
 <script>
 "use strict";
 /* ============================================================
-   Everyone Plays — soccer substitution & shift tracker
+   Everyone Plays — substitution & shift tracker for youth sports
    ============================================================ */
 
+/* Every sport uses the same four rows, back to front: GK, DEF, MID, FWD. Those keys are what the
+   event log stores, so the time model, auto-fill, undo and history never need to know the sport. A
+   sport (SPORTS, below) only renames the rows, names the positions in them, picks which rows it uses
+   and lists its formations. Soccer came first, and its profile reproduces the original exactly. */
 const BANDS = ["GK","DEF","MID","FWD"];
-const BANDNAME = {GK:"Goalie",DEF:"Defense",MID:"Midfield",FWD:"Forward"};
+const BANDNAME = {GK:"Goalie",DEF:"Defense",MID:"Midfield",FWD:"Forward"};   /* refilled for the team's sport by sportDef() */
 
 const FORMATIONS = {
   4:[{d:2,m:0,f:2,gk:false},{d:1,m:2,f:1,gk:false},{d:2,m:0,f:1,gk:true},{d:1,m:1,f:1,gk:true}],
@@ -428,28 +451,183 @@ const FORMATIONS = {
   10:[{d:5,m:0,f:4,gk:true},{d:4,m:0,f:5,gk:true},{d:4,m:3,f:2,gk:true},{d:3,m:4,f:2,gk:true},{d:4,m:4,f:1,gk:true}],
   11:[{d:5,m:0,f:5,gk:true},{d:4,m:4,f:2,gk:true},{d:4,m:3,f:3,gk:true},{d:4,m:5,f:1,gk:true},{d:3,m:5,f:2,gk:true},{d:5,m:3,f:2,gk:true}]
 };
-function formName(f){ return f.d+"-"+f.m+"-"+f.f+"-"+(f.gk?1:0); }
+function formName(f){ return sportDef().formName(f); }
 
 /* Specific positions inside each band, left to right as drawn on the Field tab (attack at
    the top). The code — LD, SW, ST — is what goes into the event log, so where a player
-   stood survives formation changes and shows up in History. Eligibility stays by band. */
-const POSDEF = {
-  GK:  {C:["GK","Goalie"]},
-  DEF: {L:["LD","Left D"],    LC:["LCD","Left center D"],   C:["SW","Sweeper"],    RC:["RCD","Right center D"],   R:["RD","Right D"]},
-  MID: {L:["LM","Left mid"],  LC:["LCM","Left center mid"], C:["CM","Center mid"], RC:["RCM","Right center mid"], R:["RM","Right mid"]},
-  FWD: {L:["LW","Left wing"], LC:["LS","Left striker"],     C:["ST","Striker"],    RC:["RS","Right striker"],     R:["RW","Right wing"]}
-};
+   stood survives formation changes and shows up in History. Eligibility stays by band.
+   A sport's `special` overrides the left-to-right rule for a band of a given size. */
 const SIDES = {1:["C"], 2:["L","R"], 3:["L","C","R"], 4:["L","LC","RC","R"], 5:["L","LC","C","RC","R"]};
+const ALLBANDS = {GK:"Goalie",DEF:"Defense",MID:"Midfield",FWD:"Forward"};
+const SPORTS = {
+  soccer: {
+    id:"soccer", name:"Soccer", surface:"field", tab:"Field", period:"Period", bands:["GK","DEF","MID","FWD"],
+    bandName:{GK:"Goalie",DEF:"Defense",MID:"Midfield",FWD:"Forward"},
+    bandShort:{GK:"GK",DEF:"DEF",MID:"MID",FWD:"FWD"}, bandLetter:{GK:"GK",DEF:"D",MID:"M",FWD:"F"},
+    csvBand:{GK:"GK",DEF:"Defense",MID:"Midfield",FWD:"Forward"}, gkButton:"GK",
+    posdef:{
+      GK:  {C:["GK","Goalie"]},
+      DEF: {L:["LD","Left D"],    LC:["LCD","Left center D"],   C:["SW","Sweeper"],    RC:["RCD","Right center D"],   R:["RD","Right D"]},
+      MID: {L:["LM","Left mid"],  LC:["LCM","Left center mid"], C:["CM","Center mid"], RC:["RCM","Right center mid"], R:["RM","Right mid"]},
+      FWD: {L:["LW","Left wing"], LC:["LS","Left striker"],     C:["ST","Striker"],    RC:["RS","Right striker"],     R:["RW","Right wing"]}
+    },
+    special:{FWD:{2:["LS","RS"]}},   /* two forwards are a strike partnership, not two wingers */
+    sizes:[4,5,6,7,8,9,10,11], defaultSize:7, sizeLabel:n => n+" v "+n,
+    formLabel:"Formation — defense, midfield, forward, keeper",
+    formName:f => f.d+"-"+f.m+"-"+f.f+"-"+(f.gk?1:0),
+    describe:f => [f.d+" at the back", f.m ? f.m+" in midfield" : "no midfield", f.f+" up top", f.gk ? "1 in goal" : "no keeper"].join(" · "),
+    elig:{GK:true,DEF:true,MID:true,FWD:true},
+    events:["GOAL","ASSIST","SOG","SHOT","SAVE","YELLOW","RED"], opp:["OPP_GOAL","OPP_SOG","OPP_SHOT"],
+    rotateLabel:"Swap defense and attack", advBlurb:"tactical formations, opponent score tracking, and match events (goals, cards, saves)"
+  },
+  fieldhockey: {
+    id:"fieldhockey", name:"Field hockey", surface:"field", tab:"Field", period:"Quarter", bands:["GK","DEF","MID","FWD"],
+    bandName:{GK:"Goalkeeper",DEF:"Defense",MID:"Midfield",FWD:"Forward"},
+    bandShort:{GK:"GK",DEF:"DEF",MID:"MID",FWD:"FWD"}, bandLetter:{GK:"GK",DEF:"D",MID:"M",FWD:"F"},
+    csvBand:{GK:"GK",DEF:"Defense",MID:"Midfield",FWD:"Forward"}, gkButton:"GK",
+    posdef:{
+      GK:  {C:["GK","Goalkeeper"]},
+      DEF: {L:["LB","Left back"], LC:["LCB","Left center back"], C:["CB","Center back"], RC:["RCB","Right center back"], R:["RB","Right back"]},
+      MID: {L:["LM","Left mid"],  LC:["LCM","Left center mid"],  C:["CM","Center mid"],  RC:["RCM","Right center mid"],  R:["RM","Right mid"]},
+      FWD: {L:["LW","Left wing"], LC:["LI","Left inner"],        C:["CF","Center forward"], RC:["RI","Right inner"],  R:["RW","Right wing"]}
+    },
+    special:{FWD:{2:["LI","RI"]}},
+    sizes:[6,7,11], defaultSize:11, sizeLabel:n => n+" v "+n,
+    formLabel:"Formation — defense, midfield, forward, keeper",
+    formName:f => f.d+"-"+f.m+"-"+f.f+"-"+(f.gk?1:0),
+    describe:f => [f.d+" at the back", f.m+" in midfield", f.f+" up front", "1 in goal"].join(" · "),
+    formations:{
+      6:[{d:2,m:1,f:2,gk:true},{d:2,m:2,f:1,gk:true}],
+      7:[{d:2,m:2,f:2,gk:true},{d:3,m:1,f:2,gk:true},{d:2,m:1,f:3,gk:true}],
+      11:[{d:4,m:3,f:3,gk:true},{d:3,m:4,f:3,gk:true},{d:4,m:4,f:2,gk:true},{d:3,m:3,f:4,gk:true}]
+    },
+    elig:{GK:false,DEF:true,MID:true,FWD:true},
+    events:["GOAL","ASSIST","SHOT","SAVE","GREEN","YELLOW","RED"], opp:["OPP_GOAL","OPP_SHOT"],
+    rotateLabel:"Swap defense and attack", advBlurb:"formations, opponent score tracking, and match events (goals, shots, saves, cards)"
+  },
+  lacrosse: {
+    id:"lacrosse", name:"Lacrosse", surface:"field", tab:"Field", period:"Quarter", bands:["GK","DEF","MID","FWD"],
+    bandName:{GK:"Goalie",DEF:"Defense",MID:"Midfield",FWD:"Attack"},
+    bandShort:{GK:"G",DEF:"DEF",MID:"MID",FWD:"ATT"}, bandLetter:{GK:"G",DEF:"D",MID:"M",FWD:"A"},
+    csvBand:{GK:"Goalie",DEF:"Defense",MID:"Midfield",FWD:"Attack"}, gkButton:"Goalie",
+    posdef:{
+      GK:  {C:["G","Goalie"]},
+      DEF: {L:["LD","Left D"],      LC:["LCD","Left close D"],  C:["CD","Center D"],     RC:["RCD","Right close D"], R:["RD","Right D"]},
+      MID: {L:["LM","Left mid"],    LC:["LCM","Left center mid"], C:["CM","Center mid"], RC:["RCM","Right center mid"], R:["RM","Right mid"]},
+      FWD: {L:["LA","Left attack"], LC:["LH","Left home"],      C:["CA","Crease attack"], RC:["RH","Right home"],   R:["RA","Right attack"]}
+    },
+    special:{FWD:{2:["LA","RA"]}},
+    sizes:[7,10,12], defaultSize:10, sizeLabel:n => n+" v "+n,
+    formLabel:"Formation — defense, midfield, attack, goalie",
+    formName:f => f.d+"-"+f.m+"-"+f.f+" + G",
+    describe:f => [f.d+" on defense", f.m+" in midfield", f.f+" on attack", "1 in goal"].join(" · "),
+    formations:{
+      7:[{d:2,m:2,f:2,gk:true}],
+      10:[{d:3,m:3,f:3,gk:true}],
+      12:[{d:3,m:5,f:3,gk:true},{d:4,m:4,f:3,gk:true}]
+    },
+    elig:{GK:false,DEF:true,MID:true,FWD:true},
+    events:["GOAL","ASSIST","SHOT","SAVE","GB","PEN"], opp:["OPP_GOAL","OPP_SHOT"], penaltySecs:[30,60,120,180],
+    rotateLabel:"Swap defense and attack", advBlurb:"opponent score tracking and match events (goals, shots, saves, ground balls, penalties)"
+  },
+  hockey: {
+    id:"hockey", name:"Ice hockey", surface:"ice", tab:"Ice", period:"Period", bands:["GK","DEF","FWD"],
+    bandName:{GK:"Goalie",DEF:"Defense",MID:"Midfield",FWD:"Forward"},
+    bandShort:{GK:"G",DEF:"D",FWD:"F"}, bandLetter:{GK:"G",DEF:"D",FWD:"F"},
+    csvBand:{GK:"Goalie",DEF:"Defense",FWD:"Forward"}, gkButton:"Goalie",
+    posdef:{
+      GK:  {C:["G","Goalie"]},
+      DEF: {L:["LD","Left D"], C:["D","Defense"], R:["RD","Right D"]},
+      FWD: {L:["LW","Left wing"], LC:["LF","Left forward"], C:["C","Center"], RC:["RF","Right forward"], R:["RW","Right wing"]}
+    },
+    special:{FWD:{2:["LF","RF"]}},
+    sizes:[4,5,6], defaultSize:6, sizeLabel:n => (n-1)+" v "+(n-1)+" plus goalie",
+    formLabel:"Skaters — defense and forwards",
+    formName:f => f.d+" D, "+f.f+" F",
+    describe:f => [f.d+" on defense", f.f+" forwards", "1 in goal"].join(" · "),
+    formations:{ 4:[{d:1,m:0,f:2,gk:true}], 5:[{d:2,m:0,f:2,gk:true}], 6:[{d:2,m:0,f:3,gk:true}] },
+    elig:{GK:false,DEF:true,MID:false,FWD:true},
+    events:["GOAL","ASSIST","SHOT","SAVE","PEN"], opp:["OPP_GOAL","OPP_SHOT"], penaltySecs:[120,240,300,600],
+    lines:true, shiftSecs:true,
+    rotateLabel:"Swap defense and forwards", advBlurb:"opponent score tracking and match events (goals, shots, saves, penalties)"
+  },
+  basketball: {
+    id:"basketball", name:"Basketball", surface:"court", tab:"Court", period:"Quarter", bands:["DEF","MID","FWD"],
+    bandName:{GK:"Goalie",DEF:"Guard",MID:"Forward",FWD:"Center"},
+    bandShort:{DEF:"G",MID:"F",FWD:"C"}, bandLetter:{DEF:"G",MID:"F",FWD:"C"},
+    csvBand:{DEF:"Guard",MID:"Forward",FWD:"Center"}, gkButton:"Goalie",
+    posdef:{
+      GK:  {},
+      DEF: {L:["PG","Point guard"], C:["PG","Point guard"], R:["SG","Shooting guard"]},
+      MID: {L:["SF","Small forward"], C:["SF","Small forward"], R:["PF","Power forward"]},
+      FWD: {C:["C","Center"]}
+    },
+    sizes:[3,4,5], defaultSize:5, sizeLabel:n => n+" v "+n,
+    formLabel:"Lineup — guards, forwards, center",
+    formName:f => f.d+" G, "+f.m+" F, "+f.f+" C",
+    describe:f => [f.d+(f.d === 1 ? " guard" : " guards"), f.m+(f.m === 1 ? " forward" : " forwards"), f.f ? "1 center" : "no center"].join(" · "),
+    formations:{ 3:[{d:1,m:1,f:1,gk:false},{d:2,m:1,f:0,gk:false}], 4:[{d:2,m:1,f:1,gk:false},{d:2,m:2,f:0,gk:false}], 5:[{d:2,m:2,f:1,gk:false}] },
+    elig:{GK:false,DEF:true,MID:true,FWD:true},
+    events:["P1","P2","P3","REB","ASSIST","STL","FOUL"], opp:["OPP_P2","OPP_P3","OPP_P1"], fouls:true,
+    rotateLabel:"Move players between guard, forward and center", advBlurb:"lineups, opponent score tracking, and game stats (points, rebounds, assists, steals, fouls)"
+  }
+};
+SPORTS.soccer.formations = FORMATIONS;
+/* Starting points for a team: a sport plus its usual format and timing. Futsal is a soccer preset;
+   lacrosse, hockey and basketball have one for their common small-sided formats. Only format, timing
+   and substitution settings change — sound, sun mode and the like stay the coach's. */
+const PRESETS = [
+  {id:"soccer", label:"Soccer", sport:"soccer", set:{teamSize:7, formationIdx:0, periods:2, periodLen:25, shiftLen:5, minStint:90, warnLead:30, extraTime:true, rotateKeeper:true, rotate:true, freshPositions:true, autoPlan:false}},
+  {id:"futsal", label:"Futsal / indoor soccer (5 v 5)", sport:"soccer", set:{teamSize:5, formationIdx:2, periods:2, periodLen:20, shiftLen:3, minStint:60, warnLead:20, extraTime:false, rotateKeeper:true, rotate:true, freshPositions:true, autoPlan:false}},
+  {id:"fieldhockey", label:"Field hockey", sport:"fieldhockey", set:{teamSize:11, formationIdx:0, periods:4, periodLen:15, shiftLen:5, minStint:90, warnLead:30, extraTime:false, rotateKeeper:false, rotate:true, freshPositions:true, autoPlan:false, sinBinMins:5}},
+  {id:"lax-boys", label:"Lacrosse — boys (10 v 10)", sport:"lacrosse", set:{teamSize:10, formationIdx:0, periods:4, periodLen:12, shiftLen:4, minStint:60, warnLead:20, extraTime:false, rotateKeeper:false, rotate:false, freshPositions:true, autoPlan:false}},
+  {id:"lax-girls", label:"Lacrosse — girls (12 v 12)", sport:"lacrosse", set:{teamSize:12, formationIdx:0, periods:2, periodLen:25, shiftLen:5, minStint:60, warnLead:20, extraTime:false, rotateKeeper:false, rotate:false, freshPositions:true, autoPlan:false}},
+  {id:"lax-youth", label:"Lacrosse — youth (7 v 7)", sport:"lacrosse", set:{teamSize:7, formationIdx:0, periods:4, periodLen:10, shiftLen:4, minStint:60, warnLead:20, extraTime:false, rotateKeeper:false, rotate:false, freshPositions:true, autoPlan:false}},
+  {id:"hockey", label:"Ice hockey (5 v 5)", sport:"hockey", set:{teamSize:6, formationIdx:0, periods:3, periodLen:15, shiftLen:1, minStint:0, warnLead:10, extraTime:false, rotateKeeper:false, rotate:false, freshPositions:false, autoPlan:true, mixLines:false}},
+  {id:"hockey-small", label:"Ice hockey — cross-ice (3 v 3 or 4 v 4)", sport:"hockey", set:{teamSize:5, formationIdx:0, periods:3, periodLen:12, shiftLen:1.5, minStint:0, warnLead:10, extraTime:false, rotateKeeper:false, rotate:false, freshPositions:false, autoPlan:true, mixLines:false}},
+  {id:"basketball", label:"Basketball (5 v 5)", sport:"basketball", set:{teamSize:5, formationIdx:0, periods:4, periodLen:8, shiftLen:4, minStint:60, warnLead:20, extraTime:false, rotateKeeper:false, rotate:false, freshPositions:false, autoPlan:false, foulOut:false, foulLimit:5}},
+  {id:"basketball-small", label:"Basketball — youth (3 v 3 or 4 v 4)", sport:"basketball", set:{teamSize:4, formationIdx:0, periods:4, periodLen:8, shiftLen:4, minStint:60, warnLead:20, extraTime:false, rotateKeeper:false, rotate:false, freshPositions:false, autoPlan:false, foulOut:false, foulLimit:5}}
+];
+function presetById(id){ return PRESETS.find(p => p.id === id) || PRESETS[0]; }
+function applyPreset(state, id){
+  const p = presetById(id);
+  state.settings.sport = p.sport; state.settings.preset = p.id;
+  Object.assign(state.settings, p.set);
+  if(state.game) state.game.next = null;
+  return state;
+}
+/* the preset shown on Setup: the one last applied, if it's still this sport */
+function currentPreset(){
+  const s = S.settings, sport = s.sport || "soccer";
+  const p = PRESETS.find(x => x.id === s.preset && x.sport === sport);
+  return p ? p.id : PRESETS.find(x => x.sport === sport).id;
+}
+
 const POSNAME = {}, POSORDER = [];
-BANDS.forEach(b => ["L","LC","C","RC","R"].forEach(s => { const d = POSDEF[b][s]; if(d){ POSNAME[d[0]] = d[1]; POSORDER.push(d[0]); } }));
+let _sportId = null;
+/* The team's sport. Position names, their order and the row names are rebuilt when it changes. */
+function sportDef(){
+  let id = "soccer";
+  try{ if(S && S.settings && SPORTS[S.settings.sport]) id = S.settings.sport; }catch(e){}
+  if(id !== _sportId){
+    _sportId = id; const sp = SPORTS[id];
+    Object.keys(POSNAME).forEach(k => delete POSNAME[k]); POSORDER.length = 0;
+    BANDS.forEach(b => {
+      BANDNAME[b] = sp.bandName[b] || ALLBANDS[b];
+      ["L","LC","C","RC","R"].forEach(s => { const d = sp.posdef[b] && sp.posdef[b][s]; if(d && POSORDER.indexOf(d[0]) < 0){ POSNAME[d[0]] = d[1]; POSORDER.push(d[0]); } });
+    });
+  }
+  return SPORTS[id];
+}
+function sportBands(){ return sportDef().bands; }
 function posCodes(band, n){
-  /* two forwards are a strike partnership, not two wingers */
-  const sides = band === "GK" ? (n ? ["C"] : []) : (band === "FWD" && n === 2) ? ["LC","RC"] : (SIDES[n] || []);
-  const out = sides.map(s => POSDEF[band][s][0]);
+  const sp = sportDef(), fixed = sp.special && sp.special[band] && sp.special[band][n];
+  const sides = band === "GK" ? (n ? ["C"] : []) : (SIDES[n] || []);
+  const out = fixed ? fixed.slice() : sides.filter(s => sp.posdef[band] && sp.posdef[band][s]).map(s => sp.posdef[band][s][0]);
   while(out.length < n) out.push(band + (out.length + 1));
   return out;
 }
-function posName(code){ return !code ? "" : POSNAME[code] || (BANDNAME[code.replace(/\d+$/,"")] || code) + " " + code.replace(/^\D+/,""); }
+function posName(code){ sportDef(); return !code ? "" : POSNAME[code] || (BANDNAME[code.replace(/\d+$/,"")] || code) + " " + code.replace(/^\D+/,""); }
 function slotPos(band, i){ return posCodes(band, slotsFor(band))[i] || null; }
 
 /* Storage keys predate the rename from Sideline to Everyone Plays. Never rename them — every
@@ -499,9 +677,10 @@ const DEFAULTS = {
     minStint:90, staleWarn:10, sinBinMins:5, ycSinBin:false, maxSwitch:null /* no limit */, rotate:true, freshPositions:true,
     confirmChanges:true, autoPlan:false, warnLead:30, sound:false, vibrate:false, dragBuzz:true, sun:false,
     seasonBalance:false, goalieRotation:false, pauseReminder:true, supportNotes:true, rotateKeeper:true, extraTime:true,
-    tapHintHidden:false /* not a Setup switch: set by Got it under the Field hint */
+    tapHintHidden:false /* not a Setup switch: set by Got it under the Field hint */,
+    sport:"soccer", preset:null, mixLines:false, foulOut:false, foulLimit:5
   },
-  game:newGame(), archive:[], lineups:[]
+  game:newGame(), archive:[], lineups:[], lines:{}
 };
 function newGame(){
   return { id:uid(), log:[], seq:0, shift:1, period:1, running:false, startedAt:null, base:0,
@@ -516,7 +695,8 @@ function hydrate(saved){
   s.game = Object.assign(newGame(), (saved && saved.game) || {}); s.game.adj = s.game.adj || {};
   if(!Array.isArray(s.roster)) s.roster = [];
   s.roster.forEach(p => { if(!p.elig) p.elig = newElig(); });
-  if(!s.lineups) s.lineups = []; if(!s.archive) s.archive = [];
+  if(!s.lineups) s.lineups = []; if(!s.archive) s.archive = []; if(!s.lines || typeof s.lines !== "object") s.lines = {};
+  if(!SPORTS[s.settings.sport]) s.settings.sport = "soccer";
   s.archive = s.archive.map(a => upgradeGame(a, s.roster)).filter(Boolean);
   if(!s.game.shift) s.game.shift = 1; s.game.log.forEach(e => { if(!e.sh) e.sh = 1; if(!e.eid) e.eid = uid(); });
   if(s.game.running){ if(s.settings.extraTime === false) s.game.base = Math.min(s.game.base, s.settings.periodLen*60); s.game.running = false; s.game.startedAt = null; s.game.pausedAt = Date.now(); }
@@ -570,12 +750,15 @@ function switchTeam(id, msg){
     "Pause and switch", ()=>{ openTeam(id, msg); });
   return Promise.resolve();
 }
-async function addTeam(name, data){
+/* data: a whole team from an old backup. preset: a new, empty team set up for that sport. */
+async function addTeam(name, data, preset){
   const id = newTeamId(), t = {id, name:String(name||"").trim().slice(0,40) || "Team "+(TEAMS.list.length+1), key:"sideline-team-"+id, players:0, bytes:0};
+  const imported = !!data;
+  if(!data && preset) data = applyPreset(hydrate(null), preset);
   TEAMS.list.push(t);
   if(data){ const s = JSON.stringify(hydrate(data)); t.players = data.roster.length; t.bytes = s.length; await Store.set(t.key, s); }
   await saveIndex();
-  await switchTeam(id, data ? "Added as a new team: "+t.name : "Added "+t.name);
+  await switchTeam(id, imported ? "Added as a new team: "+t.name : "Added "+t.name);
 }
 function renameTeam(id, name){
   const t = TEAMS.list.find(x => x.id === id); if(!t) return;
@@ -638,11 +821,12 @@ function openTeams(){
     }).join("")+'</div>'+
     '<div class="muted" style="margin:6px 0 4px">Add a team</div>'+
     '<input type="text" id="team-new" maxlength="40" placeholder="U10 Blue, Saturday rec…">'+
+    '<select id="team-sport" style="margin-top:8px" aria-label="Sport">'+PRESETS.map(p => '<option value="'+p.id+'"'+(p.id === currentPreset() ? " selected" : "")+'>'+esc(p.label)+'</option>').join("")+'</select>'+
     '<div class="muted" style="margin-top:8px">Each team has its own roster, settings, minutes and history. Rename or delete teams on Setup.</div>';
   modal("Teams", body, "Add team", ()=>{
     const v = (document.getElementById("team-new").value || "").trim();
     if(!v){ toast("Type a name for the new team"); return false; }
-    addTeam(v);
+    addTeam(v, null, document.getElementById("team-sport").value);
   }, "Close");
   document.querySelectorAll("#modalbody [data-team]").forEach(el => el.addEventListener("click", ()=>{
     const id = el.dataset.team; closeModal(); switchTeam(id);
@@ -677,6 +861,8 @@ function computeMatchScore(){
     if(e.type === "OPP_GOAL"){ them++; themSOG++; themShots++; }
     if(e.type === "OPP_SOG"){ themSOG++; themShots++; }
     if(e.type === "OPP_SHOT"){ themShots++; }
+    if(e.type === "P1" || e.type === "P2" || e.type === "P3") us += +e.type[1];
+    if(e.type === "OPP_P1" || e.type === "OPP_P2" || e.type === "OPP_P3") them += +e.type[5];
   }
   return {us, them, usShots, usSOG, themShots, themSOG};
 }
@@ -701,7 +887,8 @@ function _compute(){
   const st = {};
   S.roster.forEach(p => st[p.id] = {GK:0,DEF:0,MID:0,FWD:0,total:0,onBand:null,onPos:null,onSince:null,lastOff:null,
                                     n:{GK:0,DEF:0,MID:0,FWD:0}, nTotal:0, pos:{}, np:{},
-                                    goals:0, assists:0, saves:0, ga:0, yellows:0, reds:0, sinBinEnd:0, shots:0, sog:0});
+                                    goals:0, assists:0, saves:0, ga:0, yellows:0, reds:0, sinBinEnd:0, shots:0, sog:0,
+                                    points:0, rebounds:0, steals:0, fouls:0, gb:0, pim:0, greens:0});
   const open = {};
   const close = (pid,gt) => {
     const o = open[pid]; if(!o) return;
@@ -731,6 +918,15 @@ function _compute(){
     else if(e.type==="YELLOW" && st[e.playerId]){ st[e.playerId].yellows++; st[e.playerId].sinBinEnd = e.gt + ((S.settings.sinBinMins||5)*60); }
     else if(e.type==="RED" && st[e.playerId]) st[e.playerId].reds++;
     else if(e.type==="GA" && st[e.playerId]) st[e.playerId].ga++;
+    /* other sports: field hockey's green card is two minutes; a penalty carries its own length and
+       back-to-back penalties are served one after the other */
+    else if(e.type==="GREEN" && st[e.playerId]){ st[e.playerId].greens++; st[e.playerId].sinBinEnd = Math.max(st[e.playerId].sinBinEnd, e.gt + 120); }
+    else if(e.type==="PEN" && st[e.playerId]){ const r = st[e.playerId], secs = e.secs || 120; r.pim += secs; r.sinBinEnd = Math.max(r.sinBinEnd, e.gt) + secs; }
+    else if(e.type==="GB" && st[e.playerId]) st[e.playerId].gb++;
+    else if((e.type==="P1" || e.type==="P2" || e.type==="P3") && st[e.playerId]) st[e.playerId].points += +e.type[1];
+    else if(e.type==="REB" && st[e.playerId]) st[e.playerId].rebounds++;
+    else if(e.type==="STL" && st[e.playerId]) st[e.playerId].steals++;
+    else if(e.type==="FOUL" && st[e.playerId]) st[e.playerId].fouls++;
   }
   for(const pid in open){
     const o = open[pid]; if(!st[pid]) continue;
@@ -751,31 +947,39 @@ function computeSeasonStats(pid){
   return {goals:z("goals"), assists:z("assists"), saves:z("saves"), ga:z("ga"), yellows:z("yellows"), reds:z("reds"), shots:z("shots"), sog:z("sog")};
 }
 
+/* Timed suspensions: soccer's yellow-card sin bin is optional; every other sport's cards and
+   penalties always put the player out for their time. */
+function timedPenalties(){ return sportDef().id !== "soccer" || !!S.settings.ycSinBin; }
 function isSinBin(pid){
-  if(!S.settings.ycSinBin) return false;
+  if(!timedPenalties()) return false;
   const p = byId(pid);
   if(!p || p.avail !== "available") return false;
   const r = compute()[pid];
   return !!r && r.sinBinEnd > gameElapsed();
 }
-function isRedCarded(pid){ const r = compute()[pid]; return !!r && r.reds > 0; }
+/* out for the game: a red card, or in basketball a foul-out when that option is on */
+function isRedCarded(pid){
+  const r = compute()[pid]; if(!r) return false;
+  return r.reds > 0 || (!!sportDef().fouls && !!S.settings.foulOut && r.fouls >= (S.settings.foulLimit || 5));
+}
 function isStale(pid){
   if(!S.settings.advanced) return false;
   const p = byId(pid);
   if(!p || p.avail !== "available") return false;
   const r = compute()[pid];
-  if(!r || r.onBand || r.reds > 0 || (S.settings.ycSinBin && r.sinBinEnd > gameElapsed())) return false;
+  if(!r || r.onBand || isRedCarded(pid) || (timedPenalties() && r.sinBinEnd > gameElapsed())) return false;
   return (gameElapsed() - (r.lastOff !== null ? r.lastOff : 0)) >= (S.settings.staleWarn || 10) * 60;
 }
 function formation(){
-  const list = FORMATIONS[S.settings.teamSize] || FORMATIONS[7];
+  const sp = sportDef(), list = sp.formations[S.settings.teamSize] || sp.formations[sp.defaultSize];
   return list[Math.min(S.settings.formationIdx || 0, list.length-1)];
 }
 function slotsFor(band){ const f = formation(); return band==="GK" ? (f.gk?1:0) : band==="DEF" ? f.d : band==="MID" ? f.m : f.f; }
 function available(p){ return p.avail === "available" && !isSinBin(p.id) && !isRedCarded(p.id); }
 function eligible(p, band){ return !p || !p.elig || p.elig[band] !== false; }
-function eligList(p){ return BANDS.filter(b => eligible(p,b)); }
-function newElig(){ return {GK:true,DEF:true,MID:true,FWD:true}; }
+function eligList(p){ return sportBands().filter(b => eligible(p,b)); }
+/* soccer kids can all go in goal; in sports with goalie gear, the coach ticks who plays there */
+function newElig(){ return Object.assign({}, sportDef().elig); }
 
 /* Who is standing in which slot, band by band. Position comes from the log. Anyone without
    one (a game logged before positions existed), or whose position this formation doesn't
@@ -870,7 +1074,9 @@ function describeGroup(evs){
   const on = evs.filter(e => e.type === "ON"), off = evs.filter(e => e.type === "OFF"), mv = evs.filter(e => e.type === "MOVE");
   const pe = evs.find(e => e.type === "PERIOD_END"); if(pe) return "end of period "+pe.period;
   const LABEL = {GOAL:"goal", SOG:"shot on goal", SHOT:"shot", ASSIST:"assist", SAVE:"save", YELLOW:"yellow card", RED:"red card",
-                 GA:"goal against", OPP_GOAL:"opponent goal", OPP_SOG:"opponent shot on goal", OPP_SHOT:"opponent shot", NOTE:"note"};
+                 GA:"goal against", OPP_GOAL:"opponent goal", OPP_SOG:"opponent shot on goal", OPP_SHOT:"opponent shot", NOTE:"note",
+                 GREEN:"green card", PEN:"penalty", GB:"ground ball", P1:"free throw", P2:"2-pointer", P3:"3-pointer", REB:"rebound", STL:"steal", FOUL:"foul",
+                 OPP_P1:"opponent free throw", OPP_P2:"opponent 2-pointer", OPP_P3:"opponent 3-pointer"};
   const stat = evs.find(e => LABEL[e.type]);
   if(stat && !on.length && !mv.length) return LABEL[stat.type]+(stat.playerId && stat.type.indexOf("OPP_") !== 0 ? " — "+nm(stat.playerId) : "");
   if(on.length + off.length + mv.length > 2) return "shift change ("+on.length+" on, "+off.length+" off"+(mv.length ? ", "+mv.length+" moved" : "")+")";
@@ -929,7 +1135,7 @@ function saveLineup(name, fromPlan){
   if(!arr) arr = currentArrangement();
   if(!arr){ toast("Put a lineup on the field or in the plan first"); return false; }
   S.lineups.unshift({id:uid(), name:name, at:Date.now(), size:S.settings.teamSize,
-                     form:S.settings.formationIdx, slots:arr});
+                     form:S.settings.formationIdx, slots:arr, sport:sportDef().id});
   S.lineups = S.lineups.slice(0,12);
   save(); return true;
 }
@@ -1080,7 +1286,138 @@ function planDiff(){
   });
   return ev;
 }
+/* ---------------- hockey lines ---------------- */
+/* Hockey changes whole lines, not single players. The coach sets forward lines and defense pairs, or
+   lets the app build them from the roster. Auto-fill sends out the line and the pair that have played
+   least, keeps the goalie in, and gives a hole left by an absent or penalized player to the
+   least-played skater who isn't on the ice. Mix lines turns this off: auto-fill then picks
+   individuals, as in every other sport. */
+function lineBands(){ return ["FWD","DEF"].filter(b => slotsFor(b) > 0); }
+function usesLines(){ return !!sportDef().lines && !S.settings.mixLines; }
+function ensureLines(){
+  const L = S.lines = (S.lines && typeof S.lines === "object") ? S.lines : {}, seen = {};
+  lineBands().forEach(b => {
+    const k = slotsFor(b);
+    L[b] = (Array.isArray(L[b]) ? L[b] : []).map(line => {
+      const x = (Array.isArray(line) ? line : []).slice(0, k).map(id => byId(id) ? id : null);
+      while(x.length < k) x.push(null);
+      return x;
+    });
+  });
+  /* a player belongs to one line or pair */
+  lineBands().forEach(b => L[b].forEach(line => line.forEach((id, i) => { if(!id) return; if(seen[id]) line[i] = null; else seen[id] = 1; })));
+  return L;
+}
+function linesEmpty(){ const L = ensureLines(); return !lineBands().some(b => L[b].some(line => line.some(Boolean))); }
+/* As many lines and pairs as the roster fills with the fewest holes, keeping the counts within one of
+   each other: 13 skaters make three lines and two pairs, 10 make two of each. */
+function buildLines(){
+  const f = slotsFor("FWD"), d = slotsFor("DEF"), L = S.lines = {};
+  const byNum = (a, b) => (parseInt(a.number)||99) - (parseInt(b.number)||99);
+  const pool = S.roster.filter(p => eligible(p, "FWD") || eligible(p, "DEF")).sort(byNum), n = pool.length;
+  let best = null;
+  for(let nd = d ? 1 : 0; nd <= (d ? Math.max(1, Math.ceil(n / d)) : 0); nd++){
+    const nf = f ? Math.max(1, Math.ceil(Math.max(0, n - nd * d) / f)) : 0;
+    if(d && f && Math.abs(nf - nd) > 1) continue;
+    const holes = nf * f + nd * d - n;
+    if(!best || holes < best.holes || (holes === best.holes && nf > best.nf)) best = {nd, nf, holes};
+  }
+  if(!best) best = {nd: d ? 1 : 0, nf: f ? 1 : 0};
+  const needD = best.nd * d, needF = best.nf * f;
+  const dOnly = pool.filter(p => eligible(p, "DEF") && !eligible(p, "FWD")), fOnly = pool.filter(p => eligible(p, "FWD") && !eligible(p, "DEF"));
+  const both = pool.filter(p => eligible(p, "FWD") && eligible(p, "DEF"));
+  const dAll = dOnly.slice(0, needD);
+  const keepForF = Math.min(both.length, Math.max(0, needF - fOnly.length));
+  both.slice(0, Math.max(0, both.length - keepForF)).forEach(p => { if(dAll.length < needD) dAll.push(p); });
+  const fAll = pool.filter(p => dAll.indexOf(p) < 0);
+  while(dAll.length < needD && fAll.length > needF) dAll.push(fAll.pop());
+  const chunk = (list, size, count) => Array.from({length:count}, (_, i) => {
+    const line = list.slice(i * size, (i + 1) * size).map(p => p.id); while(line.length < size) line.push(null); return line; });
+  if(d) L.DEF = chunk(dAll, d, best.nd);
+  if(f) L.FWD = chunk(fAll, f, best.nf);
+  save();
+}
+function autoFillLines(){
+  const st = compute(), lay = fieldLayout(st), n = ensureNext();
+  BANDS.forEach(b => n[b] = n[b].map(() => null));
+  if(linesEmpty()) buildLines();
+  const L = ensureLines(), now = gameElapsed(), used = {};
+  const left = Math.max(0, Math.min((S.settings.shiftLen || 1) * 60 - (now - S.game.shiftStart), periodRemaining()));
+  const total = id => st[id].total + (st[id].onBand ? left : 0);
+  const ok = id => { const p = id && byId(id); return !!p && available(p) && !used[id]; };
+  /* the goalie stays in unless Switch goalie each shift is on */
+  if(slotsFor("GK")){
+    const keeper = lay.slots.GK[0], rotate = S.settings.rotateKeeper !== false;
+    let g = (!rotate && ok(keeper)) ? keeper : null;
+    if(!g){
+      const gk = S.roster.filter(p => ok(p.id) && eligible(p, "GK"))
+        .sort((a, c) => ((a.id === keeper) - (c.id === keeper)) || (st[a.id].GK - st[c.id].GK))[0];
+      g = gk ? gk.id : (ok(keeper) ? keeper : null);
+    }
+    if(g){ n.GK[0] = g; used[g] = 1; }
+  }
+  lineBands().forEach(b => {
+    const k = slotsFor(b);
+    const cands = L[b].map((line, idx) => ({idx, line, live: line.filter(ok)})).filter(c => c.live.length);
+    if(cands.length){
+      const avg = c => c.live.reduce((a, id) => a + total(id), 0) / c.live.length;
+      const onIce = c => c.live.filter(id => st[id].onBand).length;
+      cands.sort((a, c) => (avg(a) - avg(c)) || (onIce(a) - onIce(c)) || (a.idx - c.idx));
+      cands[0].line.forEach((id, i) => { if(i < k && ok(id)){ n[b][i] = id; used[id] = 1; } });
+    }
+    for(let i = 0; i < k; i++){
+      if(n[b][i]) continue;
+      const sub = S.roster.filter(p => ok(p.id)).sort((a, c) =>
+        ((!!st[a.id].onBand) - (!!st[c.id].onBand)) || (eligible(c, b) - eligible(a, b)) || (total(a.id) - total(c.id)))[0];
+      if(sub){ n[b][i] = sub.id; used[sub.id] = 1; }
+    }
+  });
+  save();
+}
+let lineSel = null;
+function openLines(){
+  /* the first time, start from lines built from the roster rather than an empty screen */
+  if(linesEmpty() && S.roster.length) buildLines();
+  const L = ensureLines(), bands = lineBands(), where = {};
+  if(lineSel && !(L[lineSel.b] && L[lineSel.b][lineSel.li])) lineSel = null;
+  bands.forEach(b => L[b].forEach((line, li) => line.forEach(id => { if(id) where[id] = (b === "FWD" ? "Line " : "Pair ")+(li+1); })));
+  let body = '<div class="muted" style="margin-bottom:8px">Auto-fill sends out the line and the pair that have played least. Tap a spot, then the player for it.</div>';
+  bands.forEach(b => {
+    const codes = posCodes(b, slotsFor(b)), word = b === "FWD" ? "Line" : "Pair";
+    body += '<h3 style="margin:10px 0 4px">'+(b === "FWD" ? "Forward lines" : "Defense pairs")+'</h3>'+
+      L[b].map((line, li) => '<div class="linerow"><span class="lpos">'+word+' '+(li+1)+'</span>'+line.map((id, si) => {
+        const on = lineSel && lineSel.b === b && lineSel.li === li && lineSel.si === si;
+        return '<button class="lslot'+(on ? " sel" : "")+(id ? "" : " empty")+'" data-ls="'+b+'|'+li+'|'+si+'">'+(id ? esc(first(id)) : '+ '+esc(codes[si]))+'</button>'; }).join("")+'</div>').join("")+
+      '<div class="row" style="margin:4px 0 6px"><button class="btn ghost" data-ladd="'+b+'">Add '+(b === "FWD" ? "a line" : "a pair")+'</button>'+
+      (L[b].length ? '<button class="btn ghost" data-ldrop="'+b+'">Remove the last</button>' : '')+'</div>';
+  });
+  if(lineSel){
+    const pool = S.roster.slice().sort((a, c) => ((!!where[a.id]) - (!!where[c.id])) || (eligible(c, lineSel.b) - eligible(a, lineSel.b)) || ((parseInt(a.number)||99) - (parseInt(c.number)||99)));
+    body += '<h3 style="margin:12px 0 4px">Who goes there?</h3><div class="lulist"><button data-lpick=""><b>Leave it empty</b></button>'+
+      pool.map(p => '<button data-lpick="'+p.id+'">'+avatar(p)+'<b>'+esc(p.name)+'</b><span class="muted" style="flex:none">'+
+        (where[p.id] ? esc(where[p.id]) : eligible(p, lineSel.b) ? "" : "not ticked for "+esc(BANDNAME[lineSel.b].toLowerCase()))+'</span></button>').join("")+'</div>';
+  }
+  body += '<button class="btn wide" id="l-build" style="margin-top:12px">Build lines from the roster</button>';
+  modal("Lines", body, null, null, "Done");
+  const again = () => { save(); openLines(); };
+  document.querySelectorAll("#modalbody [data-ls]").forEach(el => el.addEventListener("click", ()=>{
+    const [b, li, si] = el.dataset.ls.split("|");
+    lineSel = (lineSel && lineSel.b === b && lineSel.li === +li && lineSel.si === +si) ? null : {b, li:+li, si:+si}; again();
+  }));
+  document.querySelectorAll("#modalbody [data-lpick]").forEach(el => el.addEventListener("click", ()=>{
+    const pid = el.dataset.lpick, sel = lineSel; if(!sel) return;
+    if(pid) bands.forEach(b => L[b].forEach(line => line.forEach((id, i) => { if(id === pid) line[i] = null; })));
+    L[sel.b][sel.li][sel.si] = pid || null; lineSel = null; again();
+  }));
+  document.querySelectorAll("#modalbody [data-ladd]").forEach(el => el.addEventListener("click", ()=>{
+    const b = el.dataset.ladd; L[b].push(Array.from({length:slotsFor(b)}, () => null)); lineSel = null; again();
+  }));
+  document.querySelectorAll("#modalbody [data-ldrop]").forEach(el => el.addEventListener("click", ()=>{ L[el.dataset.ldrop].pop(); lineSel = null; again(); }));
+  document.getElementById("l-build").addEventListener("click", ()=>{ buildLines(); lineSel = null; openLines(); toast("Lines built from the roster"); });
+}
+
 function autoFillNext(){
+  if(usesLines()) return autoFillLines();
   const st = compute(), lay = fieldLayout(st), n = ensureNext();
   BANDS.forEach(b => n[b] = n[b].map(()=>null));
   const now = gameElapsed();
@@ -1181,9 +1518,38 @@ function autoFillNext(){
             fresh ? q(inPos(p.id, s.pos) + past) : q(inBand(p.id, s.band)), fresh ? q(inBand(p.id, s.band)) : 0]; };
   const better = (a, b) => { for(let k=0;k<a.length;k++) if(a[k] !== b[k]) return a[k] < b[k]; return false; };
   const incoming = squad.filter(p => !spot[p.id]);
+  /* Each step takes the cheapest pairing, but never one that lowers how many of the rest can still
+     go somewhere they're eligible. Without that check, two kids ticked for goal could both be used
+     outfield and goal left to someone who doesn't play it. With everyone eligible everywhere (soccer's
+     default) no pairing is ever refused, so the result is the plain greedy one. */
+  const maxEligible = (ps, ss) => {
+    const match = ss.map(() => null);
+    const take = (p, seen) => {
+      for(let k = 0; k < ss.length; k++){
+        if(seen[k] || !eligible(p, ss[k].band)) continue;
+        seen[k] = true;
+        if(match[k] === null || take(match[k], seen)){ match[k] = p; return true; }
+      }
+      return false;
+    };
+    return ps.reduce((n, p) => n + (take(p, {}) ? 1 : 0), 0);
+  };
   while(incoming.length && free.length){
-    let best = null;
-    incoming.forEach(p => free.forEach(s => { const c = cost(p, s); if(!best || better(c, best.c)) best = {p, s, c}; }));
+    const can = maxEligible(incoming, free), refused = new Set();
+    let best = null, first = null;
+    for(;;){
+      best = null;
+      incoming.forEach(p => free.forEach(s => {
+        if(refused.has(p.id+"|"+s.band+"|"+s.i)) return;
+        const c = cost(p, s); if(!best || better(c, best.c)) best = {p, s, c};
+      }));
+      if(!best) break;
+      if(!first) first = best;
+      const after = maxEligible(incoming.filter(x => x !== best.p), free.filter(x => x !== best.s)) + (eligible(best.p, best.s.band) ? 1 : 0);
+      if(after >= can) break;
+      refused.add(best.p.id+"|"+best.s.band+"|"+best.s.i);
+    }
+    best = best || first;
     claim(best.s); spot[best.p.id] = best.s; incoming.splice(incoming.indexOf(best.p), 1);
   }
 
@@ -1300,7 +1666,8 @@ function endPeriodNow(){
   push([{type:"PERIOD_END", base:S.game.base, shift:S.game.shift, shiftStart:S.game.shiftStart}]); alarm("end");
   if(S.game.period < S.settings.periods){
     const ended = S.game.period; nextPeriod();
-    toast("Period "+ended+" is over. Tap START when period "+S.game.period+" begins.");
+    const P = sportDef().period;
+    toast(P+" "+ended+" is over. Tap START when "+P.toLowerCase()+" "+S.game.period+" begins.");
   } else { S.game.periodOver = true; save(); render(); toast("Game over"); }
 }
 /* Doesn't switch tabs when the buzzer ends a period on its own — the Field and Next tabs say
@@ -1318,7 +1685,7 @@ function tick(){
   if(g.running && periodElapsed() >= s.periodLen*60 && !g.periodOver){
     if(s.extraTime === false){ endPeriodNow(); return; }
     /* the referee ends the period, not the app: buzz once at full time and keep counting */
-    if(!g.fullTime){ g.fullTime = true; alarm("end"); save(); render(); toast("Time is up. The clock keeps running until you end period "+g.period+"."); }
+    if(!g.fullTime){ g.fullTime = true; alarm("end"); save(); render(); toast("Time is up. The clock keeps running until you end "+sportDef().period.toLowerCase()+" "+g.period+"."); }
   }
   if(g.running && !g.periodOver){
     const rem = shiftRemaining(), guard = periodRemaining() <= 45;
@@ -1342,7 +1709,7 @@ let _shiftOut = false;
 /* a sin bin that expires silently is useless — watch for it and say so */
 let _binWatch = {};
 function checkSinBin(){
-  if(!S.settings.ycSinBin) return;
+  if(!timedPenalties()) return;
   const st = compute(), now = gameElapsed(), freed = [];
   S.roster.forEach(p => {
     const end = st[p.id] ? st[p.id].sinBinEnd : 0;
@@ -1359,8 +1726,9 @@ function checkSinBin(){
 function paintClocks(){
   const s = S.settings;
   document.getElementById("tb-clock").textContent = fmt2(periodElapsed());
-  document.getElementById("tb-period").textContent = S.game.periodOver ? (S.game.period >= s.periods ? "Game over" : "Period " + S.game.period + " over")
-    : S.game.onBreak ? "Period " + S.game.period + " ready" : "Period " + S.game.period + " of " + s.periods;
+  const P = sportDef().period;
+  document.getElementById("tb-period").textContent = S.game.periodOver ? (S.game.period >= s.periods ? "Game over" : P + " " + S.game.period + " over")
+    : S.game.onBreak ? P + " " + S.game.period + " ready" : P + " " + S.game.period + " of " + s.periods;
   /* in extra time the shift countdown is noise, so that corner counts the extra time instead */
   const xt = inExtraTime(), extra = "+" + fmt(periodElapsed() - s.periodLen*60);
   document.querySelectorAll("[data-extra]").forEach(el => el.textContent = extra);
@@ -1445,6 +1813,9 @@ function buildTabs(){
 }
 function paintTabs(){
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTab || (activeTab === "help" && b.dataset.tab === "setup")));
+  /* Field is Ice or Court in those sports; the view id stays "field" */
+  const fb = document.querySelector('#tabs button[data-tab="field"]');
+  if(fb && fb.lastChild && fb.lastChild.nodeType === 3) fb.lastChild.textContent = sportDef().tab;
   VIEWS.forEach(id => document.getElementById("v-"+id).classList.toggle("active", id === activeTab));
 }
 function openView(id){
@@ -1459,14 +1830,14 @@ function goBack(){ activeTab = (lastTab === "clock" || lastTab === "help") ? "fi
 let selected = null; 
 
 function renderField(){
-  const st = compute(), lay = fieldLayout(st);
+  const st = compute(), lay = fieldLayout(st), sp = sportDef(), P = sp.period;
 
   const nextIds = nextUpIds(Math.max(2, Math.ceil(S.settings.teamSize/3))), order = ["FWD","MID","DEF","GK"];
   let widest = 1;
   order.forEach(b => widest = Math.max(widest, lay.slots[b].length + lay.extra[b].length));
   const pitchVars = pitchSize(widest);
 
-  let pitch = '<div id="pitch" style="'+pitchVars+'">';
+  let pitch = '<div id="pitch" data-sport="'+sportDef().id+'" style="'+pitchVars+'">';
   order.forEach(b => {
     const codes = posCodes(b, slotsFor(b)), extra = lay.extra[b];
     if(!codes.length && !extra.length) return;
@@ -1481,7 +1852,7 @@ function renderField(){
   pitch += '</div>';
 
   const bench = S.roster.filter(p => !st[p.id].onBand);
-  let benchHTML = '<div id="benchzone" style="'+benchSize(bench.length, pitchVars)+'"><div id="bench">' + (bench.length ? bench.map(p => chip(p, st, null, "bench", nextIds.includes(p.id))).join("") : '<div class="muted">Everyone on the roster is on the field.</div>') + '</div></div>';
+  let benchHTML = '<div id="benchzone" style="'+benchSize(bench.length, pitchVars)+'"><div id="bench">' + (bench.length ? bench.map(p => chip(p, st, null, "bench", nextIds.includes(p.id))).join("") : '<div class="muted">Everyone on the roster is on the '+sp.surface+'.</div>') + '</div></div>';
 
   const diff = nextCount() ? planDiff() : [];
   const changes = diff.length;
@@ -1491,11 +1862,11 @@ function renderField(){
     (changes ? 'Next: '+onCt+' on · '+offCt+' off'+(mvCt?' · '+mvCt+' moving':'') : 'Times are minutes played')+'</div></div>'+
     (selected ? '' : changes
       ? '<button class="btn ghost" id="edit-next">Edit plan</button><button class="btn primary" id="send-next">Send them on</button>'
-      : '<button class="btn primary" id="plan-next">'+(S.game.log.length ? "Plan next shift" : "Pick a starting lineup")+'</button>')+'</div>';
+      : '<button class="btn primary" id="plan-next">'+(S.game.log.length ? (usesLines() ? "Plan next lines" : "Plan next shift") : "Pick a starting lineup")+'</button>')+'</div>';
 
   /* between periods and after the whistle, say what happens next right here */
   const periodCard = S.game.onBreak && S.game.log.length
-    ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>Period '+(S.game.period-1)+' is over.</b> <span class="muted">Set the lineup if you want, then tap START when period '+S.game.period+' begins.</span></div>'
+    ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>'+P+' '+(S.game.period-1)+' is over.</b> <span class="muted">Set the lineup if you want, then tap START when '+P.toLowerCase()+' '+S.game.period+' begins.</span></div>'
     : S.game.periodOver
     ? '<div class="card" style="border-color:var(--next);margin-bottom:10px"><b>Game over.</b> <span class="muted">Check the minutes, then start a new game to file this one in History.</span><div class="row" style="margin-top:8px"><button class="btn" id="f-mins">See minutes</button><button class="btn primary" id="f-newgame">New game</button></div></div>'
     : '';
@@ -1507,11 +1878,15 @@ function renderField(){
 
   /* past full time with extra time on: the clock keeps running until the coach ends the period */
   /* the how-to line goes once the coach taps Got it, or after three filed games */
-  const noKeeper = formation().gk ? "" : "No keeper in this formation. ";
+  const noKeeper = (sp.bands.indexOf("GK") < 0 || formation().gk) ? "" : "No keeper in this formation. ";
+  /* lacrosse offside: with a spot open at defense or attack, a midfielder has to hold that side */
+  const short = sp.id === "lacrosse" && S.game.log.length
+    ? ["DEF","FWD"].filter(b => slotsFor(b) && lay.slots[b].filter(Boolean).length + lay.extra[b].length < slotsFor(b)) : [];
+  const offside = short.length ? '<div class="hint" style="color:var(--warn);margin-top:0">Short on '+short.map(b => BANDNAME[b].toLowerCase()).join(" and ")+'. Hold a midfielder on that side to stay onside.</div>' : '';
   const showHint = !S.settings.tapHintHidden && S.archive.length < 3;
   const hint = (noKeeper || showHint) ? '<div class="hint">'+noKeeper+(showHint ? 'Tap a spot then a player, or two players to swap. Press and hold to drag. Green times are how long each player has been on. <button class="linkbtn" id="f-hintok">Got it</button>' : '')+'</div>' : '';
   const xtra = inExtraTime()
-    ? '<div class="card xtra"><div><b>Extra time</b> <span class="mono" data-extra></span><div class="muted">Minutes still count.</div></div><button class="btn warn" id="f-endper">End period '+S.game.period+'</button></div>'
+    ? '<div class="card xtra"><div><b>Extra time</b> <span class="mono" data-extra></span><div class="muted">Minutes still count.</div></div><button class="btn warn" id="f-endper">End '+P.toLowerCase()+' '+S.game.period+'</button></div>'
     : '';
 
   if(!S.roster.length){
@@ -1530,8 +1905,8 @@ function renderField(){
 
   document.getElementById("v-field").innerHTML =
     /* while a player is selected the cards above the field step aside, so field and bar both fit */
-    '<div class="toprow"><div class="modestrip live"><b>ON THE FIELD NOW</b> live</div>' + teamBar("f-team", true, true) + '</div>' +
-    (selected ? '' : xtra + periodCard + supportCard() + preBar) + pitch + benchHead + benchHTML +
+    '<div class="toprow"><div class="modestrip live"><b>ON THE '+sp.surface.toUpperCase()+' NOW</b> live</div>' + teamBar("f-team", true, true) + '</div>' +
+    (selected ? '' : xtra + periodCard + supportCard() + preBar + offside) + pitch + benchHead + benchHTML +
     (selected ? selbar(st) : hint) +
     /* Start a new shift is only needed once the shift clock has run out; the clock screen always has it */
     '<div class="linkrow"><button class="linkbtn" id="undo">Undo last</button>'+
@@ -1545,23 +1920,7 @@ function renderField(){
   
   if(selected && selected.t === "p"){
     const selid = selected.id;
-    document.querySelectorAll('#ev-goal').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'GOAL', 'Goal — '+first(selid)+' (counts as a shot on goal too)')));
-    document.querySelectorAll('#ev-sog').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'SOG', 'Shot on goal — '+first(selid))));
-    document.querySelectorAll('#ev-shot').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'SHOT', 'Shot — '+first(selid))));
-    document.querySelectorAll('#ev-ast').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'ASSIST', 'Assist — '+first(selid))));
-    document.querySelectorAll('#ev-save').forEach(e=>e.addEventListener('click', ()=>pushEvent(selid, 'SAVE', 'Save — '+first(selid))));
-    document.querySelectorAll('#ev-yel').forEach(e=>e.addEventListener('click', ()=>{
-      const evs = [{type: 'YELLOW', playerId: selid}];
-      const bin = S.settings.ycSinBin;
-      if(bin && st[selid].onBand) evs.push({type: 'OFF', playerId: selid});
-      push(evs); selected = null; render();
-      toast(bin ? "Yellow card — "+first(selid)+" to the sin bin" : "Yellow card recorded for "+first(selid));
-    }));
-    document.querySelectorAll('#ev-red').forEach(e=>e.addEventListener('click', ()=>{
-      const evs = [{type: 'RED', playerId: selid}];
-      if(st[selid].onBand) evs.push({type: 'OFF', playerId: selid});
-      push(evs); selected = null; render(); toast("Red card — "+first(selid)+" is out for the rest of this game");
-    }));
+    document.querySelectorAll('#v-field [data-ev]').forEach(b => b.addEventListener('click', ()=>logStat(selid, b.dataset.ev)));
   }
 
   const ft = document.getElementById("f-team"); if(ft) ft.addEventListener("click", openTeams);
@@ -1594,6 +1953,45 @@ function renderField(){
 }
 
 function pushEvent(pid, type, msg){ push([{type, playerId: pid}]); selected = null; render(); toast(msg); }
+/* A stat tapped on the selected player's bar. Cards and penalties that put a player out take them off
+   in the same group, so one Undo reverses both. */
+function logStat(pid, type){
+  const st = compute(), on = !!st[pid].onBand, nm = first(pid), sp = sportDef();
+  const off = on ? [{type:"OFF", playerId:pid}] : [];
+  if(type === "YELLOW"){
+    const bin = timedPenalties();
+    push([{type:"YELLOW", playerId:pid}].concat(bin ? off : [])); selected = null; render();
+    toast(!bin ? "Yellow card recorded for "+nm : sp.id === "soccer" ? "Yellow card — "+nm+" to the sin bin" : "Yellow card — "+nm+" off for "+(S.settings.sinBinMins||5)+" minutes");
+    return;
+  }
+  if(type === "RED"){ push([{type:"RED", playerId:pid}].concat(off)); selected = null; render(); toast("Red card — "+nm+" is out for the rest of this game"); return; }
+  if(type === "GREEN"){ push([{type:"GREEN", playerId:pid}].concat(off)); selected = null; render(); toast("Green card — "+nm+" off for 2 minutes"); return; }
+  if(type === "PEN"){ selected = null; render(); choosePenalty(pid); return; }
+  if(type === "FOUL"){
+    push([{type:"FOUL", playerId:pid}]); selected = null;
+    const r = compute()[pid], out = sp.fouls && S.settings.foulOut && r.fouls >= (S.settings.foulLimit || 5);
+    if(out && r.onBand){ pullPlayer(pid, nm+" fouled out"); return; }
+    render(); toast(out ? nm+" has fouled out" : "Foul — "+nm+" ("+r.fouls+(r.fouls === 1 ? " foul)" : " fouls)"));
+    return;
+  }
+  const MSG = {GOAL:"Goal — "+nm+" (counts as a shot on goal too)", SOG:"Shot on goal — "+nm, SHOT:"Shot — "+nm, ASSIST:"Assist — "+nm, SAVE:"Save — "+nm,
+               GB:"Ground ball — "+nm, P1:"Free throw — "+nm, P2:"2 points — "+nm, P3:"3 points — "+nm, REB:"Rebound — "+nm, STL:"Steal — "+nm};
+  if(sp.id !== "soccer" && type === "GOAL") MSG.GOAL = "Goal — "+nm;
+  pushEvent(pid, type, MSG[type] || nm);
+}
+function penLabel(s){ return s < 60 ? s+" sec" : (s % 60 ? (s/60).toFixed(1) : s/60)+" min"; }
+/* lacrosse and hockey penalties carry their length; the player sits it out and checkSinBin says when they're back */
+function choosePenalty(pid){
+  const secs = sportDef().penaltySecs || [120];
+  modal("Penalty — "+first(pid), '<div class="muted" style="margin-bottom:8px">How long? '+esc(first(pid))+' comes off, sits it out, and the app tells you when they can go back on.</div>'+
+    '<div class="row" style="flex-wrap:wrap">'+secs.map(s => '<button class="btn" data-pen="'+s+'">'+penLabel(s)+'</button>').join("")+'</div>', null, null, "Cancel");
+  document.querySelectorAll("#modalbody [data-pen]").forEach(b => b.addEventListener("click", ()=>{
+    const s = parseInt(b.dataset.pen), on = !!compute()[pid].onBand;
+    closeModal();
+    push([{type:"PEN", playerId:pid, secs:s}].concat(on ? [{type:"OFF", playerId:pid}] : []));
+    render(); toast("Penalty — "+first(pid)+" out for "+penLabel(s));
+  }));
+}
 function chip(p, st, band, kind, isNext, pos){
   const r = st[p.id], sel = selected && selected.t === "p" && selected.id === p.id;
   const sinbin = isSinBin(p.id), stale = kind === "bench" && isStale(p.id);
@@ -1606,6 +2004,8 @@ function chip(p, st, band, kind, isNext, pos){
   return '<button class="chip'+(sel?" sel":"")+(band==="GK"?" gkslot":"")+(isNext?" next":"")+(stale?" stale":"")+(sinbin?" sinbin":"")+'"'+
     (unavail?' style="opacity:.42"':'')+ ' data-chip="'+p.id+'" data-kind="'+kind+'">'+ flag + avatar(p) +
     '<span class="nm">'+esc(p.name.split(" ")[0])+'</span><span class="meta">'+(pos ? '<span class="pc mono">'+esc(pos)+'</span>' : '')+
+    /* basketball coaches watch fouls, so they show on the court card in Advanced mode */
+    (kind === "field" && r.fouls && sportDef().fouls && S.settings.advanced ? '<span class="pc mono" style="color:var(--warn)">'+r.fouls+'F</span>' : '')+
     '<span class="tm mono" data-live="'+p.id+'|'+(kind==="field"?"stint":"total")+'"></span></span></button>';
 }
 function selbar(st){
@@ -1614,16 +2014,14 @@ function selbar(st){
   }
   const p = byId(selected.id); if(!p) return "";
   const isField = !!st[p.id].onBand;
-  const evts = S.settings.advanced ? `
-    <div class="ev-grid">
-       <button class="btn ghost" id="ev-goal">Goal</button>
-       <button class="btn ghost" id="ev-ast">Assist</button>
-       <button class="btn ghost" id="ev-sog">SOG</button>
-       <button class="btn ghost" id="ev-shot">Shot</button>
-       ${isField && st[p.id].onBand === 'GK' ? '<button class="btn ghost" id="ev-save">Save</button>' : ''}
-       <button class="btn ghost" id="ev-yel" style="color:var(--warn);border-color:var(--warn)">Yellow</button>
-       <button class="btn ghost" id="ev-red" style="color:var(--alert);border-color:var(--alert)">Red</button>
-    </div>` : '';
+  /* the sport's stat buttons; Save only for whoever is in goal */
+  const EVB = {GOAL:"Goal", ASSIST:"Assist", SOG:"SOG", SHOT:"Shot", SAVE:"Save", YELLOW:"Yellow", RED:"Red", GREEN:"Green",
+               PEN:"Penalty", GB:"GB", P1:"+1", P2:"+2", P3:"+3", REB:"Reb", STL:"Steal", FOUL:"Foul"};
+  const EVID = {ASSIST:"ev-ast", YELLOW:"ev-yel"};
+  const EVTONE = {YELLOW:"var(--warn)", RED:"var(--alert)", GREEN:"var(--on)", PEN:"var(--warn)", FOUL:"var(--warn)"};
+  const onGoal = isField && st[p.id].onBand === "GK";
+  const evts = S.settings.advanced ? '<div class="ev-grid">'+sportDef().events.filter(t => t !== "SAVE" || onGoal).map(t =>
+    '<button class="btn ghost" id="'+(EVID[t] || "ev-"+t.toLowerCase())+'" data-ev="'+t+'"'+(EVTONE[t] ? ' style="color:'+EVTONE[t]+';border-color:'+EVTONE[t]+'"' : '')+'>'+EVB[t]+'</button>').join("")+'</div>' : '';
   return '<div class="selbar"><div class="seltxt"><b>'+esc(p.name)+'</b> <span class="muted">'+
     (isField ? "Tap a bench player, a spot, or a teammate." : "Tap an open spot or the player to replace.")+
     '</span></div><div class="row">'+
@@ -1792,7 +2190,7 @@ function renderNext(){
   let widest = 1; order.forEach(b => widest = Math.max(widest, slotsFor(b)));
   const pitchVars = pitchSize(widest);
 
-  let pitch = '<div id="pitch" style="'+pitchVars+'">';
+  let pitch = '<div id="pitch" data-sport="'+sportDef().id+'" style="'+pitchVars+'">';
   order.forEach(b => {
     if(!slotsFor(b)) return;
     pitch += '<div class="band">';
@@ -1853,14 +2251,16 @@ function renderNext(){
       gkList.map(x => '<button data-gkpick="'+x.p.id+'"><b>'+esc(x.p.name)+'</b><span class="muted" style="flex:none">'+periodsText(x.periods)+' · '+mins(x.secs)+' min</span></button>').join("")+'</div>', null, null, "Close");
     document.querySelectorAll("#modalbody [data-gkpick]").forEach(el => el.addEventListener("click", ()=>{ const id = el.dataset.gkpick; closeModal(); planGoalie(id); }));
   });
-  document.getElementById("n-auto").addEventListener("click", ()=>{ S.game.planCleared = false; autoFillNext(); render(); toast("Filled by fewest minutes played"); });
+  document.getElementById("n-auto").addEventListener("click", ()=>{ S.game.planCleared = false; autoFillNext(); render(); toast(usesLines() ? "Planned the line and pair that have played least" : "Filled by fewest minutes played"); });
   document.getElementById("n-send").addEventListener("click", sendNextShift);
   const clearPlan = ()=>{ S.game.next = null; S.game.planCleared = true; ensureNext(); nextSel = null; save(); render(); };
   /* Load, Save and Clear live behind one button, so the top of Next is one row */
   document.getElementById("n-lineups").addEventListener("click", ()=>{
-    modal("Lineups", '<div class="lulist"><button id="nl-load"><b>Load a saved lineup</b><span class="muted" style="flex:none">'+S.lineups.length+' saved</span></button>'+
+    modal("Lineups", '<div class="lulist">'+(sportDef().lines ? '<button id="nl-lines"><b>Edit lines</b><span class="muted" style="flex:none">'+(S.settings.mixLines ? "Mix lines is on" : "")+'</span></button>' : '')+
+      '<button id="nl-load"><b>Load a saved lineup</b><span class="muted" style="flex:none">'+sportLineups().length+' saved</span></button>'+
       (placed ? '<button id="nl-save"><b>Save this plan as a lineup</b></button><button id="nl-clear"><b>Clear the plan</b></button>' : '')+'</div>', null, null, "Close");
     document.getElementById("nl-load").addEventListener("click", ()=>{ closeModal(); openLineups(); });
+    const nli = document.getElementById("nl-lines"); if(nli) nli.addEventListener("click", ()=>{ closeModal(); openLines(); });
     const ns = document.getElementById("nl-save"); if(ns) ns.addEventListener("click", ()=>{ closeModal(); savePlan(); });
     const nc = document.getElementById("nl-clear"); if(nc) nc.addEventListener("click", ()=>{ closeModal(); clearPlan(); toast("Plan cleared"); });
   });
@@ -1874,12 +2274,14 @@ function renderNext(){
     setTimeout(()=>{ const el=document.getElementById("lu-name"); if(el) el.focus(); }, 60);
   };
 }
+/* lineups saved before sports existed are soccer ones; another sport's lineups stay hidden */
+function sportLineups(){ return S.lineups.filter(L => (L.sport || "soccer") === sportDef().id); }
 function openLineups(){
-  if(!S.lineups.length){
-    modal("No saved lineups yet", '<div style="font-size:15px">Build a lineup on the <b>Next</b> tab or put one on the field, then tap <b>Save</b>. It will be waiting here next week.</div>', null, null, "Close");
+  if(!sportLineups().length){
+    modal("No saved lineups yet", '<div style="font-size:15px">Build a lineup on the <b>Next</b> tab or put one on the '+sportDef().surface+', then tap <b>Save</b>. It will be waiting here next week.</div>', null, null, "Close");
     return;
   }
-  const body = '<div class="lulist">'+ S.lineups.map(L => {
+  const body = '<div class="lulist">'+ sportLineups().map(L => {
     const n = BANDS.map(b => (L.slots[b]||[]).filter(Boolean).length).reduce((a,c)=>a+c,0);
     return '<button data-lu="'+L.id+'"><b>'+esc(L.name)+'</b>'+
       '<span class="muted">'+n+' players · '+L.size+'v'+L.size+'</span>'+
@@ -1947,8 +2349,8 @@ function renderClock(){
   const g = S.game, s = S.settings, done = g.period >= s.periods && g.periodOver;
   document.getElementById("v-clock").innerHTML =
     '<button class="backlink" id="c-back">‹ Back</button>'+
-    '<div class="card" style="text-align:center"><div class="muted">Period '+g.period+' of '+s.periods+'</div><div class="mono" id="big-clock" style="font-size:var(--fs-clock);font-weight:700;letter-spacing:-2px">00:00</div><div class="muted" id="big-left"></div><div style="margin-top:14px" class="muted">Shift clock</div><div class="mono" id="big-shift" style="font-size:34px;font-weight:700">0:00</div><div class="row" style="margin-top:14px"><button class="btn primary" id="c-toggle">'+(g.running?"Pause":"Start")+'</button><button class="btn" id="c-shift">Restart shift</button></div></div>'+
-    (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? '<button class="btn primary wide" id="c-newgame">Start a new game</button>' : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End period '+g.period+' now</button><div class="muted" style="margin-top:8px">'+(s.extraTime !== false ? 'At '+s.periodLen+' minutes the buzzer goes and the clock keeps running for extra time, until you end the period.' : 'The clock stops on its own at '+s.periodLen+' minutes.')+' Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
+    '<div class="card" style="text-align:center"><div class="muted">'+sportDef().period+' '+g.period+' of '+s.periods+'</div><div class="mono" id="big-clock" style="font-size:var(--fs-clock);font-weight:700;letter-spacing:-2px">00:00</div><div class="muted" id="big-left"></div><div style="margin-top:14px" class="muted">Shift clock</div><div class="mono" id="big-shift" style="font-size:34px;font-weight:700">0:00</div><div class="row" style="margin-top:14px"><button class="btn primary" id="c-toggle">'+(g.running?"Pause":"Start")+'</button><button class="btn" id="c-shift">Restart shift</button></div></div>'+
+    (g.periodOver ? '<div class="card"><b>'+(done ? "Game over." : "Period "+g.period+" is done.")+'</b><div class="muted" style="margin:6px 0 10px">'+(done ? "Export the minutes from the Minutes tab, then start a new game." : "Clock is paused. Shift clock restarts with the new period.")+'</div>'+(done ? '<button class="btn primary wide" id="c-newgame">Start a new game</button>' : '<button class="btn primary wide" id="c-next">Start period '+(g.period+1)+'</button>')+'</div>' : '<div class="card"><button class="btn wide" id="c-end">End '+sportDef().period.toLowerCase()+' '+g.period+' now</button><div class="muted" style="margin-top:8px">'+(s.extraTime !== false ? 'At '+s.periodLen+' minutes the buzzer goes and the clock keeps running for extra time, until you end the period.' : 'The clock stops on its own at '+s.periodLen+' minutes.')+' Shift alerts are held back in the last 45 seconds of a period.</div></div>')+
     '<div class="card"><h2>Game controls</h2><div class="row" style="margin-bottom:8px"><button class="btn" id="c-note">Add a note</button><button class="btn ghost" id="c-undo">Undo last</button></div><div class="row" style="margin-bottom:8px"><button class="btn" id="c-newshift">Start a new shift</button></div><button class="btn warn wide" id="c-new">New game</button><div class="muted" style="margin-top:8px">New game clears the clock and all minutes, files this game in History, and keeps your roster and settings.</div></div>';
 
   document.getElementById("c-back").addEventListener("click", goBack);
@@ -2032,9 +2434,10 @@ function summarizeGame(){
       started: starters.has(p.id), shifts: shifts[p.id] ? shifts[p.id].size : 0,
       GK:R(r.GK), DEF:R(r.DEF), MID:R(r.MID), FWD:R(r.FWD), total:R(r.total), pos,
       goals:r.goals, assists:r.assists, shots:r.shots, sog:r.sog, saves:r.saves, ga:r.ga, yellows:r.yellows, reds:r.reds,
+      points:r.points, rebounds:r.rebounds, steals:r.steals, fouls:r.fouls, gb:r.gb, pim:r.pim, greens:r.greens,
       gkPeriods: Object.values(gkPer[p.id] || {}).filter(s => s >= 120).length };
   });
-  return { id:g.id || uid(), v:2, date:g.date || Date.now(), opponent:g.opponent || "", periods:g.period, endGt:R(now),
+  return { id:g.id || uid(), v:2, sport:sportDef().id, date:g.date || Date.now(), opponent:g.opponent || "", periods:g.period, endGt:R(now),
            advanced:!!S.settings.advanced, score:computeMatchScore(), playerSeconds:players.reduce((a,p) => a + p.total, 0), players };
 }
 /* Games filed before summaries existed kept a table keyed by name. Convert them, matching players
@@ -2064,9 +2467,11 @@ function upgradeGame(a, roster){
   return out;
 }
 function pastGames(){ return S.archive.slice().sort((a,b) => (b.date||0) - (a.date||0)); }
+/* a team that changed sport keeps its old games in History, but the season only adds up this sport's */
+function sameSport(a){ return (a.sport || "soccer") === sportDef().id; }
 /* finished games plus the one in progress, newest first */
 function seasonGames(limit){
-  const games = pastGames();
+  const games = pastGames().filter(sameSport);
   if(S.game.log.length) games.unshift(Object.assign(summarizeGame(), {current:true}));
   return limit ? games.slice(0, limit) : games;
 }
@@ -2082,7 +2487,7 @@ function periodsText(n){ return n === 1 ? "1 period" : n + " periods"; }
    missed three weeks isn't flagged for it. */
 function aggregate(games){
   const by = {}, team = {games:0, record:0, w:0, l:0, d:0, gf:0, ga:0, shots:0, sog:0, oppShots:0, oppSog:0};
-  const STATS = ["goals","assists","shots","sog","saves","ga","yellows","reds","gkPeriods"];
+  const STATS = ["goals","assists","shots","sog","saves","ga","yellows","reds","gkPeriods","points","rebounds","steals","fouls","gb","pim","greens"];
   games.forEach(a => {
     team.games++;
     if(hasResult(a)){
@@ -2095,11 +2500,13 @@ function aggregate(games){
     a.players.forEach(p => {
       if(!p.id) return;
       const r = by[p.id] = by[p.id] || {gp:0, missed:0, missedDates:[], total:0, expected:0, GK:0, DEF:0, MID:0, FWD:0, pos:{}, starts:0, shifts:0,
-                                        goals:0, assists:0, shots:0, sog:0, saves:0, ga:0, yellows:0, reds:0, gkPeriods:0};
+                                        goals:0, assists:0, shots:0, sog:0, saves:0, ga:0, yellows:0, reds:0, gkPeriods:0,
+                                        points:0, rebounds:0, steals:0, fouls:0, gb:0, pim:0, greens:0};
       if(!(p.attended || p.total > 0)){ r.missed++; r.missedDates.push(a.date); return; }
       r.gp++; r.total += p.total; r.expected += even; r.starts += p.started ? 1 : 0; r.shifts += p.shifts || 0;
       BANDS.forEach(b => { r[b] += p[b] || 0; });
       Object.keys(p.pos || {}).forEach(c => { r.pos[c] = (r.pos[c] || 0) + p.pos[c]; });
+      /* a game with this player's time in it, per stat — so per-sport lines can say "n goals" */
       STATS.forEach(k => { r[k] += p[k] || 0; });
     });
   });
@@ -2108,7 +2515,7 @@ function aggregate(games){
 }
 /* finished games only: seconds behind an even share, and average time per game in each position */
 function seasonBalance(){
-  const by = aggregate(S.archive).by, out = {behind:{}, posAvg:{}};
+  const by = aggregate(S.archive.filter(sameSport)).by, out = {behind:{}, posAvg:{}};
   Object.keys(by).forEach(id => {
     const r = by[id], avg = {};
     out.behind[id] = r.expected - r.total;
@@ -2159,7 +2566,9 @@ function renderSeason(){
     (!games.length ? '<div class="card">No games yet. This game shows up here once play starts, and every game you file with <b>New game</b> (tap the clock at the top) adds to the season.</div>' :
     '<div class="seg" style="margin-bottom:10px">'+lim(0,"All games")+lim(10,"Last 10")+lim(5,"Last 5")+'</div>'+
     '<div class="muted" style="margin:0 2px 8px">'+finished+' finished game'+(finished === 1 ? '' : 's')+(live ? ' plus the one in progress' : '')+'</div>'+
-    (adv && (team.record || team.gf || team.ga) ? '<div class="card"><b>Record</b> '+team.w+'–'+team.l+'–'+team.d+' <span class="muted">W–L–D</span><div class="muted" style="margin-top:4px">Goals '+team.gf+'–'+team.ga+' · Shots '+team.shots+'–'+team.oppShots+' · On goal '+team.sog+'–'+team.oppSog+'</div></div>' : '')+
+    (adv && (team.record || team.gf || team.ga) ? '<div class="card"><b>Record</b> '+team.w+'–'+team.l+'–'+team.d+' <span class="muted">W–L–D</span><div class="muted" style="margin-top:4px">'+
+      (sportDef().id === "soccer" ? 'Goals '+team.gf+'–'+team.ga+' · Shots '+team.shots+'–'+team.oppShots+' · On goal '+team.sog+'–'+team.oppSog
+        : sportDef().id === "basketball" ? 'Points '+team.gf+'–'+team.ga : 'Goals '+team.gf+'–'+team.ga+' · Shots '+team.shots+'–'+team.oppShots)+'</div></div>' : '')+
     (lows.length ? '<div class="card" style="border-color:var(--warn)"><b>Behind on minutes:</b> '+lows.map(x => esc(x.p.name.split(" ")[0])).join(", ")+'<div class="muted" style="margin-top:4px">Under 85% of an even share of the games they came to.</div></div>' : '')+
     '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1"><col class="ct"><col class="ct"><col class="ct"><col class="ctot"></colgroup><thead><tr>'+th("name","Player")+th("gp","GP")+th("total","Min")+th("avg","Avg")+th("share","Share")+'</tr></thead><tbody>'+body+'</tbody></table>'+
     '<div class="muted" style="padding:8px 2px">GP is games played. Share compares each player\'s minutes with an even split of the games they came to, goalie minutes included. Tap a name for positions'+(adv ? ', stats' : '')+' and missed games.</div></div>'+
@@ -2179,14 +2588,34 @@ function showSeasonPlayer(pid){
   const body =
     line("Games", r.gp+" played"+(r.starts ? " · "+r.starts+" started" : "")+(r.missed ? " · "+r.missed+' missed <span class="muted">('+r.missedDates.map(d => esc(gameDate(d))).join(", ")+')</span>' : ""))+
     line("Minutes", mins(r.total)+" total · "+(r.gp ? mins(r.total/r.gp) : "0.0")+" per game"+(r.share != null ? " · "+Math.round(r.share*100)+"% of an even share" : ""))+
-    line("By band", "GK "+mins(r.GK)+" · D "+mins(r.DEF)+" · M "+mins(r.MID)+" · F "+mins(r.FWD))+
+    line("By band", bandLine(r, " · "))+
     line("Positions", played.length ? played.map(c => esc(posName(c))+" "+mins(r.pos[c])).join(", ") : '<span class="muted">none recorded yet</span>')+
-    (adv ? line("Stats", r.goals+" goals · "+r.assists+" assists · "+r.shots+" shots ("+r.sog+" on goal) · "+r.saves+" saves"+(r.yellows || r.reds ? " · "+r.yellows+" yellow · "+r.reds+" red" : "")) : "")+
-    (adv && S.settings.goalieRotation ? line("In goal", periodsText(r.gkPeriods)) : "");
+    (adv ? line("Stats", sportDef().id === "soccer"
+      ? r.goals+" goals · "+r.assists+" assists · "+r.shots+" shots ("+r.sog+" on goal) · "+r.saves+" saves"+(r.yellows || r.reds ? " · "+r.yellows+" yellow · "+r.reds+" red" : "")
+      : statWords(r)) : "")+
+    (adv && S.settings.goalieRotation && sportBands().indexOf("GK") >= 0 ? line("In goal", periodsText(r.gkPeriods)) : "");
   modal(p.name, body, null, null, "Close");
 }
+/* Per-sport stat names for the non-soccer views. Soccer keeps its original wording everywhere. */
+const STATDEFS = {
+  fieldhockey:[["goals","goals","G"],["assists","assists","A"],["shots","shots","Sh"],["saves","saves","Sv"],["greens","green","GC"],["yellows","yellow","YC"],["reds","red","RC"]],
+  lacrosse:[["goals","goals","G"],["assists","assists","A"],["shots","shots","Sh"],["saves","saves","Sv"],["gb","ground balls","GB"],["pim","penalty min","PIM"]],
+  hockey:[["goals","goals","G"],["assists","assists","A"],["shots","shots","Sh"],["saves","saves","Sv"],["pim","penalty min","PIM"]],
+  basketball:[["points","points","Pts"],["rebounds","rebounds","Reb"],["assists","assists","A"],["steals","steals","Stl"],["fouls","fouls","PF"]]
+};
+function statVal(r, k){ return k === "pim" ? Math.round((r.pim || 0) / 60) : (r[k] || 0); }
+function statWords(r){ return (STATDEFS[sportDef().id] || []).map(d => statVal(r, d[0])+" "+d[1]).join(" · "); }
+/* "GK 3.0 · D 10.0 · M 5.0 · F 7.0", using the sport's rows */
+function bandLine(r, sep){ const L = sportDef().bandLetter; return sportBands().map(b => L[b]+" "+mins(r[b])).join(sep); }
 function seasonCSV(){
-  const by = aggregate(seasonGames(seasonLimit)).by;
+  const by = aggregate(seasonGames(seasonLimit)).by, sp = sportDef();
+  if(sp.id !== "soccer"){
+    const defs = STATDEFS[sp.id] || [];
+    return "Name,Number,Games,Missed,Starts,Minutes,Per game,Share,"+sportBands().map(b => sp.csvBand[b]).join(",")+",Positions,"+defs.map(d => d[2]).join(",")+"\n" +
+      S.roster.filter(p => by[p.id]).map(p => { const r = by[p.id];
+        return ['"'+p.name.replace(/"/g,'""')+'"', p.number||"", r.gp, r.missed, r.starts, mins(r.total), r.gp ? mins(r.total/r.gp) : "",
+                r.share != null ? Math.round(r.share*100)+"%" : ""].concat(sportBands().map(b => mins(r[b])), ['"'+posSummary(r, "; ")+'"'], defs.map(d => statVal(r, d[0]))).join(","); }).join("\n");
+  }
   return "Name,Number,Games,Missed,Starts,Minutes,Per game,Share,GK,Defense,Midfield,Forward,Positions,Goals,Assists,Shots,On goal,Saves,Yellow,Red\n" +
     S.roster.filter(p => by[p.id]).map(p => { const r = by[p.id];
       return ['"'+p.name.replace(/"/g,'""')+'"', p.number||"", r.gp, r.missed, r.starts, mins(r.total), r.gp ? mins(r.total/r.gp) : "",
@@ -2206,12 +2635,12 @@ function renderTimes(){
   const body = rows.map(p => {
     const r = st[p.id];
     return '<tr class="'+(r.onBand?"onfield":"")+(available(p)?"":" off")+'"><td><button class="pname" data-posinfo="'+p.id+'" style="width:100%;height:50px;font:inherit;color:inherit;text-align:left"><div class="pnum" style="background:'+colorOf(p.number)+'">'+esc(p.number||"–")+'</div><b>'+esc(p.name)+'</b></button></td>'+
-      BANDS.map(b => '<td class="t"><button data-edit="'+p.id+'|'+b+'"><span class="mono" data-live="'+p.id+'|'+b+'">0:00</span><span class="cnt" data-livec="'+p.id+'|'+b+'"></span></button></td>').join("")+
+      sportBands().map(b => '<td class="t"><button data-edit="'+p.id+'|'+b+'"><span class="mono" data-live="'+p.id+'|'+b+'">0:00</span><span class="cnt" data-livec="'+p.id+'|'+b+'"></span></button></td>').join("")+
       '<td class="t"><div class="tot"><span class="mono" data-live="'+p.id+'|total">0:00</span><span class="cnt" data-livec="'+p.id+'|total"></span></div></td></tr>';
   }).join("");
 
   document.getElementById("v-times").innerHTML =
-    viewToggle()+(S.roster.length ? '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1"><col class="ct"><col class="ct"><col class="ct"><col class="ct"><col class="ctot"></colgroup><thead><tr>'+th("name","Player")+th("GK","GK")+th("DEF","DEF")+th("MID","MID")+th("FWD","FWD")+th("total","Total")+'</tr></thead><tbody>'+body+'</tbody></table><div class="muted" style="padding:8px 2px">Each cell shows time played and, below it, how many times they went into that spot. Tap a time to correct it, or a name to see which positions they have played. Green names are on the field.</div></div><div class="row"><button class="btn" id="x-csv">Save CSV</button>'+(navigator.share ? '<button class="btn" id="x-share">Share summary</button>' : '')+'<button class="btn ghost" id="x-text">Copy</button></div>' : '<div class="card">No players yet. Add your team on the Roster tab.</div>');
+    viewToggle()+(S.roster.length ? '<div class="card" style="padding:6px 8px"><table class="grid"><colgroup><col class="c1">'+sportBands().map(() => '<col class="ct">').join("")+'<col class="ctot"></colgroup><thead><tr>'+th("name","Player")+sportBands().map(b => th(b, sportDef().bandShort[b])).join("")+th("total","Total")+'</tr></thead><tbody>'+body+'</tbody></table><div class="muted" style="padding:8px 2px">Each cell shows time played and, below it, how many times they went into that spot. Tap a time to correct it, or a name to see which positions they have played. Green names are on the '+sportDef().surface+'.</div></div><div class="row"><button class="btn" id="x-csv">Save CSV</button>'+(navigator.share ? '<button class="btn" id="x-share">Share summary</button>' : '')+'<button class="btn ghost" id="x-text">Copy</button></div>' : '<div class="card">No players yet. Add your team on the Roster tab.</div>');
 
   bindViewToggle();
   document.querySelectorAll("#v-times th.sortable").forEach(el => el.addEventListener("click", ()=>{
@@ -2243,11 +2672,11 @@ function showPositions(pid){
 function posSummary(r, sep){ return POSORDER.filter(k => r.pos && r.pos[k] > 0).map(k => k+" "+mins(r.pos[k])).join(sep); }
 function summaryText(){
   const st = compute(), rows = S.roster.slice().sort((a,b)=>st[b.id].total-st[a.id].total);
-  return "Playing time — " + new Date().toLocaleDateString() + "\n" + rows.map(p => { const r = st[p.id]; return "#"+(p.number||"–")+" "+p.name+" — "+mins(r.total)+" min  (GK "+mins(r.GK)+", D "+mins(r.DEF)+", M "+mins(r.MID)+", F "+mins(r.FWD)+")"+(posSummary(r, ", ") ? "  · "+posSummary(r, ", ") : ""); }).join("\n");
+  return "Playing time — " + new Date().toLocaleDateString() + "\n" + rows.map(p => { const r = st[p.id]; return "#"+(p.number||"–")+" "+p.name+" — "+mins(r.total)+" min  ("+bandLine(r, ", ")+")"+(posSummary(r, ", ") ? "  · "+posSummary(r, ", ") : ""); }).join("\n");
 }
 function summaryCSV(){
-  const st = compute();
-  return "Name,Number,GK,Defense,Midfield,Forward,Total,Positions\n" + S.roster.map(p => { const r = st[p.id]; return '"'+p.name.replace(/"/g,'""')+'",'+(p.number||"")+","+mins(r.GK)+","+mins(r.DEF)+","+mins(r.MID)+","+mins(r.FWD)+","+mins(r.total)+',"'+posSummary(r, "; ")+'"'; }).join("\n");
+  const st = compute(), sp = sportDef();
+  return "Name,Number,"+sportBands().map(b => sp.csvBand[b]).join(",")+",Total,Positions\n" + S.roster.map(p => { const r = st[p.id]; return '"'+p.name.replace(/"/g,'""')+'",'+(p.number||"")+","+sportBands().map(b => mins(r[b])).join(",")+","+mins(r.total)+',"'+posSummary(r, "; ")+'"'; }).join("\n");
 }
 function stamp(){ const d = new Date(), pad = n => String(n).padStart(2,"0"); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes()); }
 function backupName(ext){ return "everyone-plays-backup-"+stamp()+(ext || ".json"); }
@@ -2300,7 +2729,9 @@ function fixEvent(eid){
     return;
   }
   const LABEL = {GOAL:"Goal", SOG:"Shot on goal", SHOT:"Shot", ASSIST:"Assist",
-                 SAVE:"Save", YELLOW:"Yellow card", RED:"Red card", GA:"Goal against"};
+                 SAVE:"Save", YELLOW:"Yellow card", RED:"Red card", GA:"Goal against",
+                 GREEN:"Green card", PEN:"Penalty", GB:"Ground ball", P1:"Free throw", P2:"2-pointer", P3:"3-pointer",
+                 REB:"Rebound", STL:"Steal", FOUL:"Foul"};
   const st = compute();
   /* whoever was on the field when it happened comes first — that is nearly always who you meant */
   const onThen = {};
@@ -2388,12 +2819,14 @@ function showGame(id){
   const came = a.players.filter(p => p.attended || p.total > 0).sort((x,y) => y.total - x.total);
   const missed = a.players.filter(p => !(p.attended || p.total > 0));
   const nameOf = pid => { const p = a.players.find(x => x.id === pid) || byId(pid); return p ? esc(String(p.name).split(" ")[0]) : "?"; };
-  const stats = p => adv ? [["G",p.goals],["A",p.assists],["Sv",p.saves],["YC",p.yellows],["RC",p.reds]].filter(x => x[1]).map(x => x[1]+x[0]).join(" ") : "";
+  const stats = p => !adv ? "" : sportDef().id === "soccer"
+    ? [["G",p.goals],["A",p.assists],["Sv",p.saves],["YC",p.yellows],["RC",p.reds]].filter(x => x[1]).map(x => x[1]+x[0]).join(" ")
+    : (STATDEFS[sportDef().id] || []).map(d => [d[2], statVal(p, d[0])]).filter(x => x[1]).map(x => x[1]+" "+x[0]).join(" ");
   const body =
     '<div style="font-size:15px;margin-bottom:8px">'+(a.opponent ? 'vs <b>'+esc(a.opponent)+'</b>' : '<span class="muted">No opponent set</span>')+(adv && hasResult(a) ? ' · <b>'+resultText(a.score)+'</b>' : '')+'</div>'+
     '<div class="row" style="margin-bottom:10px"><button class="btn" id="g-edit">Edit date or opponent</button><button class="btn ghost" id="g-del" style="color:var(--alert)">Delete game</button></div>'+
     came.map(p => '<div class="stage">#'+esc(p.number||"–")+' '+esc(p.name)+' — <b>'+mins(p.total)+'</b> min'+(stats(p) ? ' · '+stats(p) : '')+
-      '<div class="muted">GK '+mins(p.GK)+' · D '+mins(p.DEF)+' · M '+mins(p.MID)+' · F '+mins(p.FWD)+(posSummary(p, ", ") ? ' · '+esc(posSummary(p, ", ")) : '')+'</div></div>').join("")+
+      '<div class="muted">'+bandLine(p, " · ")+(posSummary(p, ", ") ? ' · '+esc(posSummary(p, ", ")) : '')+'</div></div>').join("")+
     (missed.length ? '<div class="stage muted">Not there: '+missed.map(p => esc(p.name)).join(", ")+'</div>' : '')+
     (a.log ? '<h3>Shifts</h3>'+shiftCardsHTML(a.log, {live:false, endGt:a.endGt || (a.log.length ? a.log[a.log.length-1].gt : 0), nameOf})
            : '<div class="muted" style="margin-top:8px">Shift-by-shift detail is kept for the '+LOGS_KEPT+' most recent games.</div>');
@@ -2428,10 +2861,14 @@ function shiftCardsHTML(log, opts){
   /* full words in the detail, standard box-score letters in the collapsed header */
   const MARK  = {GOAL:"Goal", SOG:"SOG", SHOT:"Shot", ASSIST:"Assist", SAVE:"Save",
                  YELLOW:"Yellow card", RED:"Red card", GA:"Goal against",
-                 OPP_GOAL:"goal", OPP_SOG:"shot on goal", OPP_SHOT:"shot"};
+                 OPP_GOAL:"goal", OPP_SOG:"shot on goal", OPP_SHOT:"shot",
+                 GREEN:"Green card", PEN:"Penalty", GB:"Ground ball", P1:"Free throw", P2:"2-pointer", P3:"3-pointer",
+                 REB:"Rebound", STL:"Steal", FOUL:"Foul", OPP_P1:"free throw", OPP_P2:"2-pointer", OPP_P3:"3-pointer"};
   const SHORT = {GOAL:"G", SOG:"SOG", SHOT:"Sh", ASSIST:"A", SAVE:"Sv",
-                 YELLOW:"YC", RED:"RC", GA:"GA"};
-  const TONE  = {YELLOW:"var(--warn)", RED:"var(--alert)", GOAL:"var(--on)"};
+                 YELLOW:"YC", RED:"RC", GA:"GA",
+                 GREEN:"GC", PEN:"PEN", GB:"GB", P1:"FT", P2:"2P", P3:"3P", REB:"Reb", STL:"Stl", FOUL:"PF"};
+  const TONE  = {YELLOW:"var(--warn)", RED:"var(--alert)", GOAL:"var(--on)",
+                 GREEN:"var(--on)", PEN:"var(--warn)", FOUL:"var(--warn)", P1:"var(--on)", P2:"var(--on)", P3:"var(--on)"};
   const MATCH = e => MARK[e.type] || e.type==="NOTE" || e.type==="PERIOD_END";
 
   const html = nums.map(sh => {
@@ -2515,11 +2952,15 @@ function renderRoster(){
   const st = compute(), list = S.roster.length ? S.roster.map(p => {
     const open = openPlayer === p.id, el = eligList(p), isAvail = available(p) || p.avail === "available";
     const quickBtn = '<button class="btn '+(isAvail?'ghost':'warn')+'" style="padding:0 10px;min-height:32px;height:32px;font-size:11px;margin-right:4px;" data-quick-avail="'+p.id+'">'+(isAvail?'Here':'Out')+'</button>';
-    const head = '<div class="prow'+(open?" open":"")+'" data-open="'+p.id+'">'+ avatar(p) + '<div class="meta"><b>'+esc(p.name)+'</b><div class="status'+(isAvail?"":" out")+'">#'+esc(p.number||"–")+' · '+ el.map(b=>b==="GK"?"GK":b[0]).join("·")+(isAvail ? "" : " · "+(AVAIL.find(a=>a[0]===p.avail)||AVAIL[0])[1])+(st[p.id].onBand ? " · on at "+esc(posName(st[p.id].onPos) || BANDNAME[st[p.id].onBand]) : "")+'</div></div>'+quickBtn+'<span class="muted">'+(open?"▾":"▸")+'</span></div>';
+    const head = '<div class="prow'+(open?" open":"")+'" data-open="'+p.id+'">'+ avatar(p) + '<div class="meta"><b>'+esc(p.name)+'</b><div class="status'+(isAvail?"":" out")+'">#'+esc(p.number||"–")+' · '+ el.map(b=>sportDef().bandLetter[b]).join("·")+(isAvail ? "" : " · "+(AVAIL.find(a=>a[0]===p.avail)||AVAIL[0])[1])+(st[p.id].onBand ? " · on at "+esc(posName(st[p.id].onPos) || BANDNAME[st[p.id].onBand]) : "")+'</div></div>'+quickBtn+'<span class="muted">'+(open?"▾":"▸")+'</span></div>';
     if(!open) return head;
     
     let sznHtml = "";
-    if(S.settings.advanced){
+    if(S.settings.advanced && sportDef().id !== "soccer"){
+      const r = aggregate(seasonGames()).by[p.id] || {};
+      sznHtml = '<div class="muted" style="margin-bottom:4px">Season totals</div><div class="row" style="margin-bottom:12px;font-size:11px;text-align:center;flex-wrap:wrap">'+
+        (STATDEFS[sportDef().id] || []).slice(0, 5).map(d => '<div class="card" style="margin-bottom:4px;padding:6px;flex:1 1 18%"><b>'+statVal(r, d[0])+'</b><br>'+d[2]+'</div>').join("")+'</div>';
+    } else if(S.settings.advanced){
       const szn = computeSeasonStats(p.id);
       sznHtml = `
         <div class="muted" style="margin-bottom:4px">Season Event Totals</div>
@@ -2532,16 +2973,17 @@ function renderRoster(){
         </div>`;
     }
 
-    return head + '<div class="pedit">'+sznHtml+'<div class="row" style="margin-bottom:10px"><input type="text" data-f="name" data-p="'+p.id+'" value="'+esc(p.name)+'" style="flex:3"><input type="text" inputmode="numeric" data-f="number" data-p="'+p.id+'" value="'+esc(p.number)+'" style="flex:1"></div><div class="muted" style="margin-bottom:4px">Positions this player can take</div><div class="postog">'+ BANDS.map(b => '<button class="'+(eligible(p,b)?"on":"")+'" data-elig="'+p.id+'|'+b+'">'+(b==="GK"?"GK":BANDNAME[b])+'</button>').join("") +'</div><div class="muted" style="margin-bottom:4px">Availability</div><div class="seg" style="margin-bottom:12px">'+ AVAIL.map(a => '<button class="'+(p.avail===a[0]?"on":"")+'" data-avail="'+p.id+'|'+a[0]+'">'+({available:"Here",late:"Late",early:"Left",out:"Out"})[a[0]]+'</button>').join("") +'</div><div class="row" style="align-items:center;margin-bottom:12px"><button class="btn" data-cam="'+p.id+'">Take photo</button><button class="btn" data-lib="'+p.id+'">Choose file</button>'+(p.photo ? '<button class="btn ghost" data-nophoto="'+p.id+'">Clear photo</button>' : '')+'</div><button class="btn warn wide" data-del="'+p.id+'">Remove from roster</button></div>';
+    return head + '<div class="pedit">'+sznHtml+'<div class="row" style="margin-bottom:10px"><input type="text" data-f="name" data-p="'+p.id+'" value="'+esc(p.name)+'" style="flex:3"><input type="text" inputmode="numeric" data-f="number" data-p="'+p.id+'" value="'+esc(p.number)+'" style="flex:1"></div><div class="muted" style="margin-bottom:4px">Positions this player can take</div><div class="postog">'+ sportBands().map(b => '<button class="'+(eligible(p,b)?"on":"")+'" data-elig="'+p.id+'|'+b+'">'+(b==="GK"?sportDef().gkButton:BANDNAME[b])+'</button>').join("") +'</div><div class="muted" style="margin-bottom:4px">Availability</div><div class="seg" style="margin-bottom:12px">'+ AVAIL.map(a => '<button class="'+(p.avail===a[0]?"on":"")+'" data-avail="'+p.id+'|'+a[0]+'">'+({available:"Here",late:"Late",early:"Left",out:"Out"})[a[0]]+'</button>').join("") +'</div><div class="row" style="align-items:center;margin-bottom:12px"><button class="btn" data-cam="'+p.id+'">Take photo</button><button class="btn" data-lib="'+p.id+'">Choose file</button>'+(p.photo ? '<button class="btn ghost" data-nophoto="'+p.id+'">Clear photo</button>' : '')+'</div><button class="btn warn wide" data-del="'+p.id+'">Remove from roster</button></div>';
   }).join("") : '<div class="card">No players yet. Type a name and number above to add your first one.</div>';
 
   document.getElementById("v-roster").innerHTML =
     teamBar("r-team", true)+
-    (S.roster.length ? '<div class="row" style="margin-bottom:10px"><button class="btn" id="r-checkin">Who is here today?</button></div>' : '')+
-    '<div class="addrow"><input class="n" type="text" id="a-name" placeholder="Player name" value="'+esc(addName)+'"><input class="j" type="text" inputmode="numeric" id="a-num" placeholder="#" value="'+esc(addNum)+'"><button class="btn primary" id="a-go">Add</button></div><div class="plist">'+list+'</div>'+(S.roster.length ? '<div class="muted" style="margin-top:10px">'+S.roster.length+' players · '+S.roster.filter(available).length+' available · '+S.settings.teamSize+' on the field. Tap a player to set positions, availability and a photo.</div>' : "")+'<input type="file" accept="image/*" capture="user" id="file-cam" style="display:none"><input type="file" accept="image/*" id="file-lib" style="display:none">';
+    (S.roster.length ? '<div class="row" style="margin-bottom:10px"><button class="btn" id="r-checkin">Who is here today?</button>'+(sportDef().lines ? '<button class="btn" id="r-lines">Lines</button>' : '')+'</div>' : '')+
+    '<div class="addrow"><input class="n" type="text" id="a-name" placeholder="Player name" value="'+esc(addName)+'"><input class="j" type="text" inputmode="numeric" id="a-num" placeholder="#" value="'+esc(addNum)+'"><button class="btn primary" id="a-go">Add</button></div><div class="plist">'+list+'</div>'+(S.roster.length ? '<div class="muted" style="margin-top:10px">'+S.roster.length+' players · '+S.roster.filter(available).length+' available · '+S.settings.teamSize+' on the '+sportDef().surface+'. Tap a player to set positions, availability and a photo.</div>' : "")+'<input type="file" accept="image/*" capture="user" id="file-cam" style="display:none"><input type="file" accept="image/*" id="file-lib" style="display:none">';
 
   document.getElementById("r-team").addEventListener("click", openTeams);
   const rci = document.getElementById("r-checkin"); if(rci) rci.addEventListener("click", openCheckIn);
+  const rli = document.getElementById("r-lines"); if(rli) rli.addEventListener("click", ()=>{ lineSel = null; openLines(); });
   const nameEl = document.getElementById("a-name"), numEl = document.getElementById("a-num");
   nameEl.addEventListener("input", ()=>{ addName = nameEl.value; }); numEl.addEventListener("input", ()=>{ addNum = numEl.value; });
   const addNow = () => {
@@ -2597,6 +3039,25 @@ function shrink(file, cb){
 /* ============================================================
    SETUP
    ============================================================ */
+/* Help answers that depend on the team's sport, shown ahead of the general ones */
+function sportHelp(q){
+  const sp = sportDef(), out = [];
+  out.push(q("Which sports does it do?",
+    "Soccer (futsal too), field hockey, lacrosse, ice hockey and basketball. Each team has its own sport: pick it when you add a team, or change it on <b>Setup</b> between games. Tabs and positions use that sport's words, so the <b>Field</b> tab is <b>Ice</b> in hockey and <b>Court</b> in basketball."));
+  if(sp.id !== "soccer" && sp.bands.indexOf("GK") >= 0) out.push(q("Who plays in goal?",
+    "Goalies wear their own gear, so new players aren't ticked for goal. Open each goalie on <b>Roster</b> and tick <b>"+sp.gkButton+"</b>. Auto-fill keeps your goalie in unless you turn on <b>Switch goalie each shift</b>."));
+  if(sp.lines) out.push(q("How do lines work?",
+    "Hockey changes whole lines. Tap <b>Lines</b> on the Roster tab to set forward lines and defense pairs, or let the app build them from the roster. <b>Plan next lines</b> sends out the line and the pair that have played least, and gives a spot left by an absent or penalized player to whoever has played least.<br><br>With <b>Keep next shift ready</b> on, the next change is already waiting on the Ice tab after each one: one tap on <b>Send them on</b>. Turn on <b>Mix lines</b> on Setup to rotate individual skaters instead."));
+  if(sp.penaltySecs) out.push(q("Penalties",
+    "In Advanced mode, tap the player, then <b>Penalty</b> and how long. They come off, their spot stays open, and the app tells you when they can go back on. Penalty minutes add up in the Season view."));
+  if(sp.id === "fieldhockey") out.push(q("Cards",
+    "In Advanced mode, tap the player, then the card. Green is 2 minutes off, yellow is the suspension set on Setup, and red is the rest of the game. The app tells you when a suspended player can go back on."));
+  if(sp.fouls) out.push(q("Fouls",
+    "In Advanced mode, tap the player, then <b>Foul</b>. A player's fouls show on their card. Turn on <b>Foul-out</b> on Setup and a player who reaches the limit comes off, and the app offers the fairest replacement."));
+  if(sp.id === "lacrosse") out.push(q("Offside",
+    "If a penalty or an injury leaves defense or attack a player short, the Field tab says so, as a reminder to hold a midfielder on that side."));
+  return out.join("");
+}
 function renderHelp(){
   const q = (t,a) => '<div class="helpq">'+t+'</div><div class="helpa">'+a+'</div>';
   document.getElementById("v-help").innerHTML =
@@ -2609,6 +3070,7 @@ function renderHelp(){
       '<div class="startrow"><b>4</b><div>When the buzzer goes, tap <b>Plan next shift</b>, check it, then <b>Send them on</b>. Field is what is live; Next is the plan.</div></div>'+
     '</div>'+
     '<div class="card">'+
+      sportHelp(q)+
       q("What is the difference between Field and Next?",
         "<b>Field</b> is what is happening right now. Change something here and it takes effect immediately — that is your injury sub or a quick fix.<br><br><b>Next</b> is the shift you are getting ready. Nothing there is live until you tap Send them on.")+
       q("How do I move players around?",
@@ -2645,22 +3107,32 @@ function renderHelp(){
   document.getElementById("h-back").addEventListener("click", goBack);
 }
 function renderSetup(){
-  const s = S.settings, list = FORMATIONS[s.teamSize] || FORMATIONS[7], sizes = [4,5,6,7,8,9,10,11];
+  const s = S.settings, sp = sportDef(), list = sp.formations[s.teamSize] || sp.formations[sp.defaultSize], sizes = sp.sizes, P = sp.period;
+  const hasGK = sp.bands.indexOf("GK") >= 0, midGame = S.game.log.length > 0, preset = currentPreset();
   document.getElementById("v-setup").innerHTML =
     '<div class="row" style="margin-bottom:10px"><button class="btn" id="s-help-top">How it works</button></div>'+
     '<div class="card"><h2>Teams</h2><div class="muted" style="margin-bottom:8px">This is <b>'+esc(activeTeam().name)+'</b>'+(TEAMS.list.length > 1 ? ', one of '+TEAMS.list.length+' teams' : '')+'. Each team keeps its own roster, settings, minutes and history. Sun mode, sound and vibration are the same for every team.</div><div class="row"><button class="btn" id="t-switch">'+(TEAMS.list.length > 1 ? "Switch or add" : "Add a team")+'</button><button class="btn ghost" id="t-rename">Rename</button></div>'+(TEAMS.list.length > 1 ? '<button class="btn warn wide" id="t-delete" style="margin-top:8px">Delete this team</button>' : '')+'</div>'+
-    '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b>'+tipBtn("adv")+'<div class="muted">Enable tactical formations, opponent score tracking, and match events (goals, cards, saves).</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
-    '<div class="card"><h2>Game format</h2><label class="field"><span>Players on the field, per side'+tipBtn("s-size")+'</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+n+' v '+n+'</option>').join("")+'</select></label><label class="field adv-only"><span>Formation — defense, midfield, forward, keeper'+tipBtn("s-form")+'</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+formName(f)+(f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
-    '<div class="card"><h2>Timing</h2>'+numField("s-periods","Periods",s.periods,1,6,1)+numField("s-plen","Minutes per period",s.periodLen,1,60,1)+toggleRow("s-extra","Keep running into extra time",s.extraTime!==false)+numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1)+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1)+'</div></div>'+
+    '<div class="card" style="border-color:var(--next)"><div class="row" style="align-items:center;"><div style="flex:3"><b>Advanced Coaching Mode</b>'+tipBtn("adv")+'<div class="muted">Enable '+esc(sp.advBlurb)+'.</div></div><div class="seg" style="flex:1;"><button id="adv-on" class="'+(s.advanced?"on":"")+'">On</button><button id="adv-off" class="'+(s.advanced?"":"on")+'">Off</button></div></div></div>'+
+    '<div class="card"><h2>Game format</h2>'+
+      '<label class="field"><span>Sport'+tipBtn("s-sport")+'</span><select id="s-sport"'+(midGame ? " disabled" : "")+'>'+PRESETS.map(p => '<option value="'+p.id+'"'+(p.id === preset ? " selected" : "")+'>'+esc(p.label)+'</option>').join("")+'</select></label>'+
+      (midGame ? '<div class="muted" style="margin:-4px 0 10px">To change the sport, finish this game first: tap the clock at the top, then <b>New game</b>.</div>' : '')+
+      '<label class="field"><span>Players on the '+sp.surface+', per side'+tipBtn("s-size")+'</span><select id="s-size">'+sizes.map(n=>'<option value="'+n+'"'+(s.teamSize===n?" selected":"")+'>'+esc(sp.sizeLabel(n))+'</option>').join("")+'</select></label><label class="field adv-only"><span>'+esc(sp.formLabel)+tipBtn("s-form")+'</span><select id="s-form">'+list.map((f,i)=>'<option value="'+i+'"'+(s.formationIdx===i?" selected":"")+'>'+esc(formName(f))+(sp.id === "soccer" ? (f.m===0?"  (no midfield)":"")+(f.gk?"":"  (no keeper)") : "")+'</option>').join("")+'</select></label><div class="muted adv-only">'+describeFormation()+'</div></div>'+
+    '<div class="card"><h2>Timing</h2>'+numField("s-periods",P+"s",s.periods,1,6,1)+numField("s-plen","Minutes per "+P.toLowerCase(),s.periodLen,1,60,1)+toggleRow("s-extra","Keep running into extra time",s.extraTime!==false)+
+      /* hockey shifts are under a minute and a half, so they're set in seconds */
+      (sp.shiftSecs ? numField("s-slen","Shift length, seconds",Math.round(s.shiftLen*60),20,300,5) : numField("s-slen","Shift length, minutes",s.shiftLen,1,45,1))+numField("s-warn","Warning beep, seconds before end",s.warnLead,0,120,5)+numField("s-min","Minimum time on before a player can be pulled (sec)",s.minStint,0,600,15)+'<div class="adv-only">'+numField("s-stale","Stale bench warning (min)",s.staleWarn||10,1,60,1)+
+      (sp.id === "soccer" ? numField("s-sin","Sin bin duration (min)",s.sinBinMins||5,1,15,1) : sp.id === "fieldhockey" ? numField("s-sin","Yellow card suspension (min)",s.sinBinMins||5,1,15,1) : '')+'</div></div>'+
     '<div class="card"><h2>Alerts</h2>'+toggleRow("s-sound","Buzzer at shift end",s.sound)+
       (canVibrate()
         ? toggleRow("s-vib","Vibrate at shift end",s.vibrate)+toggleRow("s-dragbuzz","Buzz on press and hold",s.dragBuzz!==false)
         : '<div class="muted" style="margin-bottom:8px">This browser can\'t vibrate (iPhones don\'t allow it from web pages), so vibration options are hidden.</div>')+
       toggleRow("s-pause","Paused-clock reminder",s.pauseReminder!==false)+
       '<div class="row" style="margin-top:8px"><button class="btn" id="s-test">Test the buzzer</button></div></div>'+
-    '<div class="card"><h2>How subs are picked</h2>'+toggleRow("s-auto","Keep next shift ready",s.autoPlan!==false)+toggleRow("s-keeper","Switch goalie each shift",s.rotateKeeper!==false)+toggleRow("s-rot","Swap defense and attack",s.rotate)+
+    '<div class="card"><h2>How subs are picked</h2>'+toggleRow("s-auto","Keep next shift ready",s.autoPlan!==false)+
+      (sp.lines ? toggleRow("s-mix","Mix lines",!!s.mixLines)+'<div class="row" style="margin-bottom:10px"><button class="btn" id="s-lines">Edit lines</button></div>' : '')+
+      (hasGK ? toggleRow("s-keeper","Switch goalie each shift",s.rotateKeeper!==false) : '')+toggleRow("s-rot",sp.rotateLabel,s.rotate)+
       toggleRow("s-fresh","Try new positions",s.freshPositions!==false)+toggleRow("s-seasonbal","Balance past games",!!s.seasonBalance)+switchField(s.maxSwitch)+
-      '<div class="adv-only">'+toggleRow("s-gk","Suggest next goalie",!!s.goalieRotation)+toggleRow("s-yc","Yellow card sin bin",!!s.ycSinBin)+'</div>'+
+      '<div class="adv-only">'+(hasGK ? toggleRow("s-gk","Suggest next goalie",!!s.goalieRotation) : '')+(sp.id === "soccer" ? toggleRow("s-yc","Yellow card sin bin",!!s.ycSinBin) : '')+
+      (sp.fouls ? toggleRow("s-foulout","Foul-out",!!s.foulOut)+numField("s-foullim","Fouls to foul out",s.foulLimit||5,1,10,1) : '')+'</div>'+
       '<div class="muted">How it works explains each of these.</div></div>'+
     '<div class="card"><h2>Screen and controls</h2>'+toggleRow("s-confirm","Confirm tap changes",s.confirmChanges!==false)+toggleRow("s-sun","Sun mode",s.sun)+toggleRow("s-support","After-game support note",s.supportNotes!==false)+'</div>'+
     '<div class="card"><h2>Backup</h2>'+(storageMode === "memory" ? '<div class="card" style="border-color:var(--alert);margin-bottom:10px"><b>This page can\'t save on its own.</b><div class="muted" style="margin-top:4px">The browser is blocking storage for this file, so everything is lost when you close the tab. Save a backup file before the game, and add the page to your home screen or open it from your Files app to get storage working.</div></div>' : '<div class="muted" style="margin-bottom:8px">Saving automatically to '+storageMode+' storage as you go. A backup file protects you from a cleared cache or a new phone, and includes every team.</div>')+'<div class="row"><button class="btn" id="s-dl">Save backup file</button><button class="btn" id="s-open">Open backup file</button></div><div class="row" style="margin-top:8px">'+(navigator.share ? '<button class="btn ghost" id="s-share">Share backup</button>' : '')+'<button class="btn ghost" id="s-exp">Copy as text</button><button class="btn ghost" id="s-imp">Paste text</button></div><input type="file" accept=".json,.txt,application/json,text/plain" id="s-file" style="display:none"><button class="btn warn wide" id="s-wipe" style="margin-top:12px">Erase everything</button></div>'+
@@ -2690,7 +3162,7 @@ function renderSetup(){
   document.getElementById("adv-off").addEventListener("click", ()=>{ S.settings.advanced = false; save(); render(); });
   document.getElementById("s-size").addEventListener("change", e => { S.settings.teamSize = parseInt(e.target.value); S.settings.formationIdx = 0; save(); render(); });
   document.getElementById("s-form").addEventListener("change", e => { S.settings.formationIdx = parseInt(e.target.value); save(); render(); });
-  bindNum("s-periods", v => S.settings.periods = v); bindNum("s-plen", v => S.settings.periodLen = v); bindNum("s-slen", v => { S.settings.shiftLen = v; S.game.warned=false; S.game.alerted=false; }); bindNum("s-warn", v => S.settings.warnLead = v); bindNum("s-min", v => S.settings.minStint = v); bindNum("s-stale", v => S.settings.staleWarn = v); bindNum("s-sin", v => S.settings.sinBinMins = v);
+  bindNum("s-periods", v => S.settings.periods = v); bindNum("s-plen", v => S.settings.periodLen = v); bindNum("s-slen", v => { S.settings.shiftLen = sportDef().shiftSecs ? v/60 : v; S.game.warned=false; S.game.alerted=false; }); bindNum("s-warn", v => S.settings.warnLead = v); bindNum("s-min", v => S.settings.minStint = v); bindNum("s-stale", v => S.settings.staleWarn = v); bindNum("s-sin", v => S.settings.sinBinMins = v);
   document.getElementById("s-switch").addEventListener("change", e => { S.settings.maxSwitch = e.target.value === "" ? null : parseInt(e.target.value); save(); });
   bindTog("s-sound", v => S.settings.sound = v); bindTog("s-vib", v => S.settings.vibrate = v); bindTog("s-dragbuzz", v => S.settings.dragBuzz = v); bindTog("s-pause", v => S.settings.pauseReminder = v); bindTog("s-confirm", v => S.settings.confirmChanges = v); bindTog("s-auto", v => { S.settings.autoPlan = v; if(!v){ S.game.next=null; S.game.planCleared=true; } }); bindTog("s-rot", v => S.settings.rotate = v); bindTog("s-keeper", v => S.settings.rotateKeeper = v); bindTog("s-fresh", v => S.settings.freshPositions = v); bindTog("s-seasonbal", v => S.settings.seasonBalance = v); bindTog("s-yc", v => S.settings.ycSinBin = v); bindTog("s-gk", v => S.settings.goalieRotation = v); bindTog("s-sun", v => { S.settings.sun = v; document.body.classList.toggle("sun", v); });
   document.getElementById("s-test").addEventListener("click", ()=>{ primeAudio(); setTimeout(()=>alarm("end"), 60); });
@@ -2698,6 +3170,16 @@ function renderSetup(){
   document.getElementById("s-help-top").addEventListener("click", ()=>openView("help"));
   bindTog("s-support", v => S.settings.supportNotes = v);
   bindTog("s-extra", v => S.settings.extraTime = v);
+  bindTog("s-mix", v => { S.settings.mixLines = v; S.game.next = null; });
+  bindTog("s-foulout", v => S.settings.foulOut = v); bindNum("s-foullim", v => S.settings.foulLimit = v);
+  const sl = document.getElementById("s-lines"); if(sl) sl.addEventListener("click", ()=>{ lineSel = null; openLines(); });
+  document.getElementById("s-sport").addEventListener("change", e => {
+    const id = e.target.value, p = presetById(id);
+    e.target.value = preset;
+    modal("Set this team up for "+p.label+"?",
+      '<div style="font-size:15px">Players per side, timing and substitution settings change to the usual ones for '+esc(p.label)+'. The roster, past games and your other settings stay. Saved lineups from another sport are hidden until you switch back.</div>',
+      "Switch", ()=>{ applyPreset(S, id); S.game.next = null; invalidate(); save(); render(); toast(activeTeam().name+" is set up for "+p.label); });
+  });
   document.getElementById("s-dl").addEventListener("click", ()=>buildBackup().then(text => saveFile(backupName(), text, "application/json")));
   const sh = document.getElementById("s-share"); if(sh) sh.addEventListener("click", ()=>buildBackup().then(text => shareFile(backupName(".txt"), text, "text/plain", "Everyone Plays backup")));
   const fi = document.getElementById("s-file"); document.getElementById("s-open").addEventListener("click", ()=>fi.click());
@@ -2769,8 +3251,8 @@ function selfCheck(){
   return out.join("");
 }
 function describeFormation(){
-  const f = formation(), parts = [f.d+" at the back", f.m ? f.m+" in midfield" : "no midfield", f.f+" up top", f.gk ? "1 in goal" : "no keeper"];
-  return parts.join(" · ") + " = " + ((f.gk?1:0)+f.d+f.m+f.f) + " on the field.";
+  const f = formation(), sp = sportDef();
+  return sp.describe(f) + " = " + ((f.gk?1:0)+f.d+f.m+f.f) + " on the "+sp.surface+".";
 }
 function switchField(v){
   return '<label class="field"><span>Position changes per shift'+tipBtn("s-switch")+'</span><select id="s-switch">'+
@@ -2805,7 +3287,11 @@ const TIPS = {
   "s-yc": "A yellow card takes the player off for the sin bin time, and the app tells you when they can come back.",
   "s-confirm": "Asks before making a change you started by tapping. Dragging never asks, because a drag is hard to do by accident.",
   "s-sun": "High-contrast black on white, for bright sunlight.",
-  "s-support": "Now and then after you file a game, a short note with a link to support the app. Never during a game."
+  "s-support": "Now and then after you file a game, a short note with a link to support the app. Never during a game.",
+  "s-sport": "The sport this team plays. It sets the positions, the stats in Advanced mode, and the usual players per side, timing and substitution settings. Each team has its own sport. It can change only between games.",
+  "s-mix": "Off: auto-fill sends out your forward lines and defense pairs as set under Edit lines, the ones that have played least first. On: it picks individual skaters by minutes instead, so lines mix.",
+  "s-foulout": "A player who reaches the foul limit comes off and can't go back on, and the app offers the fairest replacement. Fouls are logged in Advanced mode.",
+  "s-foullim": "How many fouls put a player out of the game when Foul-out is on. Most youth and high school leagues use 5."
 };
 function tipBtn(key){ return TIPS[key] ? '<button type="button" class="tipbtn" data-tip="'+key+'" aria-label="What does this setting do?">?</button>' : ''; }
 let tipOpen = null;
@@ -2867,7 +3353,8 @@ window.addEventListener("resize", ()=>{
   _resizeTimer = setTimeout(()=>{ if(!drag && (activeTab === "field" || activeTab === "next")) render(); }, 150);
 });
 document.getElementById("tb-score").addEventListener("click", ()=>{
-   const sc = computeMatchScore();
+   const sc = computeMatchScore(), sp = sportDef();
+   if(sp.id !== "soccer"){ openScore(); return; }
    const body = `
      <div style="display:flex; justify-content:space-around; text-align:center; margin-bottom:16px;">
         <div><b>Us</b><br>${sc.us} G<br>${sc.usSOG} SOG<br>${sc.usShots} Sh</div>
@@ -2891,6 +3378,26 @@ document.getElementById("tb-score").addEventListener("click", ()=>{
      document.getElementById("opp-shot").addEventListener("click", ()=>{ push([{type: 'OPP_SHOT'}]); closeModal(); toast("Opponent shot"); render(); });
    }, 50);
 });
+
+/* The score pop-up for sports other than soccer: points in basketball, goals and shots elsewhere.
+   An opponent goal is charged to whoever is in goal, as in soccer. */
+function openScore(){
+  const sc = computeMatchScore(), sp = sportDef(), bball = sp.id === "basketball";
+  const OPPB = {OPP_GOAL:"Goal", OPP_SHOT:"Shot", OPP_SOG:"SOG", OPP_P1:"+1", OPP_P2:"+2", OPP_P3:"+3"};
+  const body = '<div style="display:flex;justify-content:space-around;text-align:center;margin-bottom:16px">'+
+      '<div><b>Us</b><br>'+sc.us+(bball ? ' pts' : ' G<br>'+sc.usShots+' Sh')+'</div>'+
+      '<div><b>Them</b><br>'+sc.them+(bball ? ' pts' : ' G<br>'+sc.themShots+' Sh')+'</div></div>'+
+    '<div class="muted" style="margin-bottom:8px">'+(bball ? "Log opponent points:" : "Log opponent event:")+'</div>'+
+    '<div class="row">'+sp.opp.map((t, i) => '<button class="btn '+(i ? "ghost" : "primary")+'" data-opp="'+t+'" style="font-size:13px;padding:0">'+OPPB[t]+'</button>').join("")+'</div>';
+  modal(bball ? "Score" : "Match stats & opponent events", body, null, null, "Close");
+  document.querySelectorAll("#modalbody [data-opp]").forEach(b => b.addEventListener("click", ()=>{
+    const t = b.dataset.opp, evs = [{type:t}], st = compute();
+    const gk = t === "OPP_GOAL" ? S.roster.find(p => st[p.id] && st[p.id].onBand === "GK") : null;
+    if(gk) evs.push({type:"GA", playerId:gk.id});
+    push(evs); closeModal(); render();
+    toast(bball ? "Opponent "+OPPB[t] : "Opponent "+OPPB[t].toLowerCase()+(gk ? " — goal against "+first(gk.id) : ""));
+  }));
+}
 
 /* Register the service worker when we're on a real origin. Opened straight from a
    downloads folder this throws, which is fine — the app still runs, it just can't

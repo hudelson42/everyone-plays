@@ -146,6 +146,38 @@ chose not to build a playing-time target or a parent summary for now. Share of
 minutes is measured against games attended, so missing a week isn't flagged as
 unfair.
 
+### Other sports (added 2026-09-15)
+
+The coach asked how hard other sports would be and chose soccer (futsal as a
+soccer preset), field hockey, lacrosse, ice hockey and basketball, peewee
+through high school, each team with its own sport, soccer unchanged.
+
+The time model already didn't care about the sport, so the log keeps its four
+band keys (GK, DEF, MID, FWD, back to front) for every sport. A sport profile in
+`SPORTS` renames them (Attack in lacrosse; Guard, Forward, Center in basketball),
+names positions, lists formations and stat buttons, and says which bands exist
+(no goalie in basketball, no midfield in hockey). `sportDef()` rebuilds
+`BANDNAME`, `POSNAME` and `POSORDER` when the team's sport changes. `PRESETS`
+set format, timing and substitution settings for a sport's common formats.
+
+Decisions taken as the coach's defaults, answered before building:
+
+- The sport is picked when a team is added and can change only between games.
+  Existing teams are soccer. Lineups from another sport are hidden; past games
+  stay in History, and the season adds up only this sport's games.
+- Hockey changes lines. The coach sets forward lines and defense pairs (or
+  Build lines from the roster); auto-fill sends the line and pair with the
+  least time, keeps the goalie in, and fills holes with the least-played
+  skater not on the ice. Mix lines, off, returns to individual auto-fill.
+  Shifts are set in seconds. Keep next shift ready is on for hockey.
+- Lacrosse uses the soccer shift model; penalties are timed (30 s to 3 min) and
+  a short defense or attack shows an offside reminder rather than blocking.
+- Basketball plays for even minutes, named positions PG SG SF PF C with
+  guard/forward/center eligibility, foul-out an option (off, 5 fouls).
+- Field hockey cards: green 2 min, yellow the suspension setting, red out.
+- Goalie eligibility starts unticked outside soccer, because goalies wear gear.
+- Extra time stays soccer's; the other sports' presets stop at full time.
+
 ### The name
 
 Renamed from Sideline to Everyone Plays on 2026-09-14, before the project was
@@ -244,6 +276,14 @@ the log, not stored here.
 | `rotate` | `true` | Prefer moving players between defense and attack |
 | `rotateKeeper` | `true` | Switch the goalie each shift; off holds the keeper in goal |
 | `extraTime` | `true` | At full time the buzzer goes and the clock keeps running until the coach ends the period (added 2026-09-15); off stops the clock at full time, the old behaviour |
+| `sport` | `"soccer"` | The team's sport, a key of `SPORTS` (added 2026-09-15) |
+| `preset` | `null` | The `PRESETS` id last applied, so Setup shows futsal rather than soccer |
+| `mixLines` | `false` | Hockey: auto-fill picks individual skaters instead of set lines |
+| `foulOut` / `foulLimit` | `false` / `5` | Basketball: a player at the limit is out of the game |
+
+Teams also keep `lines` (`{FWD:[[id,…],…], DEF:[[id,id],…]}`) for hockey.
+Events added for other sports: `GREEN`, `PEN` (with `secs`), `GB`, `P1` `P2` `P3`,
+`REB`, `STL`, `FOUL`, `OPP_P1` `OPP_P2` `OPP_P3`. Archived games carry `sport`.
 | `freshPositions` | `true` | Put incoming players in the open positions they've played least |
 | `autoPlan` | `false` | Keep the next shift prepared in the background (default changed to off 2026-09-14) |
 | `confirmChanges` | `true` | Confirm tap-initiated changes (drag is never confirmed) |
@@ -353,6 +393,7 @@ Worth reading, because they show the failure modes this codebase actually has.
 | A goal opening a shift was treated as the shift's opening group | Test suite | Same, different cause |
 | New component CSS never written (script aborted mid-edit) | Screenshot | Unstyled layout |
 | Season stats read trimmed logs | Code review, 2026-09-14 | Roster tab throws once a team has four past games |
+| Auto-fill put a player not ticked for goal in goal when two were | Sports test suite, 2026-09-15 | Invariant 4 fails at kickoff in field hockey and lacrosse; latent in soccer, where everyone is ticked for goal |
 
 Note the pattern: **none of these threw an exception.** Screenshots and
 invariant checks caught them; reading the code did not, mostly.

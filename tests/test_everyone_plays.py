@@ -961,6 +961,207 @@ def main():
         check("the Run self-check button is gone from Setup", share["noSelfCheck"], str(share))
 
         # ---------------------------------------------------------------
+        section("Sports")
+        pg.evaluate(SEED, [ROSTER, 7, False])
+        forms = pg.evaluate("""(() => { const out = [];
+          Object.values(SPORTS).forEach(sp => Object.keys(sp.formations).forEach(k => sp.formations[k].forEach(f => {
+            const total = (f.gk ? 1 : 0) + f.d + f.m + f.f;
+            if (total != k || sp.sizes.indexOf(+k) < 0) out.push(sp.id + ' ' + k + ' = ' + total);
+          })));
+          const dupes = [];
+          Object.values(SPORTS).forEach(sp => { S.settings.sport = sp.id;
+            Object.keys(sp.formations).forEach(k => sp.formations[k].forEach((f, idx) => {
+              S.settings.teamSize = +k; S.settings.formationIdx = idx;
+              const codes = BANDS.flatMap(b => posCodes(b, slotsFor(b)));
+              const unnamed = codes.filter(c => !POSNAME[c]);
+              if (new Set(codes).size !== codes.length || unnamed.length) dupes.push(sp.id + ' ' + k + ': ' + codes.join(' '));
+            })); });
+          S.settings.sport = 'soccer'; S.settings.teamSize = 7; S.settings.formationIdx = 0; invalidate();
+          return { out, dupes, presets: PRESETS.every(p => SPORTS[p.sport] && (SPORTS[p.sport].formations[p.set.teamSize])) }; })()""")
+        check("every sport's formations add up to its team sizes", not forms["out"], ", ".join(forms["out"]))
+        check("every sport's positions are named and distinct in every formation", not forms["dupes"], "; ".join(forms["dupes"]))
+        check("every preset points at a real sport and size", forms["presets"])
+        check("an existing team with no sport loads as soccer",
+              pg.evaluate("hydrate({ roster: [], settings: { teamSize: 9 } }).settings.sport") == "soccer")
+
+        # a full game in every preset: auto-fill each shift, send it on, check the invariants
+        games = pg.evaluate("""(() => {
+          const out = {};
+          PRESETS.forEach(pr => {
+            applyPreset(S, pr.id);
+            const size = S.settings.teamSize, n = size + Math.max(3, Math.ceil(size / 2));
+            S.roster = Array.from({ length: n }, (_, i) => ({ id: 'g' + i, name: 'Kid ' + i, number: String(i + 1), photo: null,
+              avail: 'available', elig: Object.assign(newElig(), i < 2 ? { GK: true } : {}) }));
+            S.game = newGame(); S.lines = {}; S.archive = []; S.settings.seasonBalance = false; invalidate();
+            const shift = S.settings.shiftLen * 60, per = S.settings.periodLen * 60;
+            let bad = [], ineligible = 0, shifts = 0;
+            for (let p = 1; p <= S.settings.periods; p++) {
+              for (let t = 0; t + shift <= per + 0.001; t += shift) {
+                S.game.base = t; invalidate();
+                S.game.next = null; S.game.planCleared = false; autoFillNext();
+                const ev = planDiff(); beginNewShift(); push(ev); shifts++;
+                const st = compute();
+                ineligible += S.roster.filter(q => st[q.id].onBand && st[q.id].onBand !== 'GK' && !eligible(q, st[q.id].onBand)).length;
+                if (selfCheck().indexOf('FAIL') >= 0) {
+                  const d = document.createElement('div'); d.innerHTML = selfCheck();
+                  bad.push(p + ':' + t + ' ' + [...d.querySelectorAll('.stage')].map(x => x.textContent).filter(x => /FAIL/.test(x)).join('; '));
+                }
+              }
+              S.game.base = per; invalidate();
+              if (p < S.settings.periods) endPeriodNow(); else { stopClock(); }
+            }
+            /* compare players who never went in goal; where everyone took a turn (soccer), compare everyone */
+            const st = compute(), noGoal = S.roster.filter(q => !(st[q.id].GK > 0)), skaters = noGoal.length > 1 ? noGoal : S.roster;
+            const mins = skaters.map(q => st[q.id].total);
+            out[pr.id] = { bad: bad.length, why: bad.slice(0, 1), ineligible, shifts, spread: Math.round(Math.max(...mins) - Math.min(...mins)), shift,
+                           onField: S.roster.filter(q => st[q.id].onBand).length, size };
+          });
+          applyPreset(S, 'soccer'); S.game = newGame(); invalidate();
+          return out; })()""")
+        broken = {k: v for k, v in games.items() if v["bad"] or v["ineligible"] or v["onField"] != v["size"]}
+        check("a full game in every sport keeps the invariants", not broken, str(broken or games))
+        uneven = {k: v for k, v in games.items() if not k.startswith("hockey") and v["spread"] > 2 * v["shift"]}
+        check("outside hockey, skaters' minutes come out within two shifts of each other", not uneven, str(uneven or games))
+
+        hockey = pg.evaluate("""(() => {
+          applyPreset(S, 'hockey'); S.settings.periods = 1; S.settings.periodLen = 60;   /* 45 one-minute shifts in one long period */
+          S.roster = Array.from({ length: 14 }, (_, i) => ({ id: 'h' + i, name: 'Skater ' + i, number: String(i + 1), photo: null,
+            avail: 'available', elig: Object.assign(newElig(), i === 0 ? { GK: true, DEF: false, FWD: false } : {}) }));
+          S.game = newGame(); S.lines = {}; invalidate();
+          buildLines();
+          const L = ensureLines(), shape = { F: L.FWD.length, D: L.DEF.length, holes: [].concat(...L.FWD, ...L.DEF).filter(x => !x).length,
+            goalieInLines: [].concat(...L.FWD, ...L.DEF).indexOf('h0') >= 0 };
+          const lineOf = {}; L.FWD.forEach((l, i) => l.forEach(id => lineOf[id] = 'F' + i)); L.DEF.forEach((l, i) => l.forEach(id => lineOf[id] = 'D' + i));
+          let wholeLines = true, goalieSwaps = 0, keeper = null;
+          for (let k = 0; k < 45; k++) {
+            S.game.base = k * 60; invalidate(); S.game.next = null; S.game.planCleared = false; autoFillNext();
+            const n = ensureNext();
+            if (new Set(n.FWD.map(id => lineOf[id])).size !== 1 || new Set(n.DEF.map(id => lineOf[id])).size !== 1) wholeLines = false;
+            if (keeper && n.GK[0] !== keeper) goalieSwaps++; keeper = n.GK[0];
+            const ev = planDiff(); beginNewShift(); push(ev);
+          }
+          S.game.base = 2700; invalidate();
+          const st = compute(), t = ids => ids.map(id => st[id].total), spread = a => Math.max(...a) - Math.min(...a);
+          const fIds = [].concat(...L.FWD), dIds = [].concat(...L.DEF);
+          const r = { shape, wholeLines, goalieSwaps, fSpread: spread(t(fIds)), dSpread: spread(t(dIds)), ok: selfCheck().indexOf('FAIL') < 0 };
+          /* a penalty: the skater comes off, can't be planned while serving, and is back after two minutes */
+          const pid = fIds[0]; const onNow = !!compute()[pid].onBand;
+          push([{ type: 'PEN', playerId: pid, secs: 120 }].concat(onNow ? [{ type: 'OFF', playerId: pid }] : []));
+          S.game.next = null; autoFillNext();
+          r.penaltyOut = !available(byId(pid)) && !nextSlotOf(pid);
+          S.game.base = 2700 + 121; invalidate();
+          r.penaltyBack = available(byId(pid));
+          r.pim = compute()[pid].pim;
+          /* mix lines hands auto-fill back to individual minutes */
+          S.settings.mixLines = true; S.game.next = null; autoFillNext(); r.mixPlanned = nextCount();
+          r.tab = (render(), document.querySelector('#tabs button[data-tab="field"]').textContent);
+          r.strip = (activeTab = 'field', render(), document.querySelector('#v-field .modestrip').textContent);
+          r.secs = (activeTab = 'setup', render(), document.getElementById('s-slen').value);
+          activeTab = 'field'; applyPreset(S, 'soccer'); S.game = newGame(); invalidate(); render();
+          return r; })()""")
+        check("hockey builds three lines and two pairs from 13 skaters, goalie left out",
+              hockey["shape"] == {"F": 3, "D": 2, "holes": 0, "goalieInLines": False}, str(hockey))
+        check("hockey sends out whole lines and keeps the goalie in", hockey["wholeLines"] and hockey["goalieSwaps"] == 0, str(hockey))
+        check("forward lines and defense pairs each come out even", hockey["fSpread"] <= 60 and hockey["dSpread"] <= 60 and hockey["ok"], str(hockey))
+        check("a hockey penalty sits the player out for its length and counts penalty minutes",
+              hockey["penaltyOut"] and hockey["penaltyBack"] and hockey["pim"] == 120, str(hockey))
+        check("Mix lines plans individuals instead", hockey["mixPlanned"] == 6, str(hockey))
+        check("hockey says Ice and sets shifts in seconds",
+              hockey["tab"] == "Ice" and "ON THE ICE NOW" in hockey["strip"] and hockey["secs"] == "60", str(hockey))
+
+        hoops = pg.evaluate("""(() => {
+          applyPreset(S, 'basketball'); S.settings.advanced = true;
+          S.roster = Array.from({ length: 9 }, (_, i) => ({ id: 'b' + i, name: 'Hooper ' + i, number: String(i + 1), photo: null, avail: 'available', elig: newElig() }));
+          S.game = newGame(); invalidate(); S.game.next = null; autoFillNext(); push(planDiff());
+          const st0 = compute(), pid = S.roster.find(p => st0[p.id].onBand).id;
+          push([{ type: 'P2', playerId: pid }]); push([{ type: 'P3', playerId: pid }]); push([{ type: 'OPP_P1' }]);
+          const sc = computeMatchScore();
+          const r = { us: sc.us, them: sc.them, codes: BANDS.flatMap(b => posCodes(b, slotsFor(b))).join(' '), gk: slotsFor('GK') };
+          for (let k = 0; k < 5; k++) push([{ type: 'FOUL', playerId: pid }]);
+          invalidate(); r.inWithOptionOff = available(byId(pid));
+          S.settings.foulOut = true; invalidate(); r.outWithOptionOn = !available(byId(pid));
+          S.settings.foulOut = false;
+          activeTab = 'field'; selected = { t: 'p', id: pid, kind: 'field' }; render();
+          r.buttons = [...document.querySelectorAll('#v-field [data-ev]')].map(b => b.textContent).join(' ');
+          r.fouls = [...document.querySelectorAll('#v-field .band .chip .pc')].map(e => e.textContent).filter(t => /^\\d+F$/.test(t)).join(' ');
+          selected = null; activeTab = 'times'; render();
+          r.cols = [...document.querySelectorAll('#v-times th')].map(e => e.textContent).join(' ');
+          activeTab = 'field'; render(); r.tab = document.querySelector('#tabs button[data-tab="field"]').textContent;
+          const summary = summarizeGame(); r.points = summary.players.find(p => p.id === pid).points; r.sport = summary.sport;
+          applyPreset(S, 'soccer'); S.settings.advanced = false; S.game = newGame(); invalidate(); render();
+          return r; })()""")
+        check("basketball keeps score in points", hoops["us"] == 5 and hoops["them"] == 1, str(hoops))
+        check("basketball positions are PG SG SF PF C with no goalie", hoops["codes"] == "PG SG SF PF C" and hoops["gk"] == 0, str(hoops))
+        check("foul-out is an option", hoops["inWithOptionOff"] and hoops["outWithOptionOn"], str(hoops))
+        check("basketball stat buttons, fouls on the card, and G F C minutes columns",
+              hoops["buttons"] == "+1 +2 +3 Reb Assist Steal Foul" and hoops["fouls"] == "5F" and hoops["cols"] == "Player G F C Total"
+              and hoops["tab"] == "Court", str(hoops))
+        check("a filed basketball game keeps its sport and points", hoops["points"] == 5 and hoops["sport"] == "basketball", str(hoops))
+
+        cards = pg.evaluate("""(() => {
+          const r = {};
+          applyPreset(S, 'fieldhockey'); S.settings.advanced = true;
+          S.roster = Array.from({ length: 14 }, (_, i) => ({ id: 'f' + i, name: 'Stick ' + i, number: String(i + 1), photo: null, avail: 'available', elig: newElig() }));
+          S.game = newGame(); invalidate(); S.game.next = null; autoFillNext(); push(planDiff());
+          const st = compute(), pid = S.roster.find(p => st[p.id].onBand && st[p.id].onBand !== 'GK').id;
+          logStat(pid, 'GREEN');
+          r.greenOff = !compute()[pid].onBand && !available(byId(pid));
+          S.game.base = 121; invalidate(); r.greenBack = available(byId(pid));
+          applyPreset(S, 'lax-boys');
+          S.roster = Array.from({ length: 14 }, (_, i) => ({ id: 'l' + i, name: 'Middie ' + i, number: String(i + 1), photo: null, avail: 'available', elig: Object.assign(newElig(), i === 0 ? { GK: true } : {}) }));
+          S.game = newGame(); invalidate(); S.game.next = null; autoFillNext(); push(planDiff());
+          const lst = compute(), att = S.roster.find(p => lst[p.id].onBand === 'FWD').id;
+          push([{ type: 'PEN', playerId: att, secs: 60 }, { type: 'OFF', playerId: att }]);
+          activeTab = 'field'; render();
+          r.offside = [...document.querySelectorAll('#v-field .hint')].some(h => /Short on attack/.test(h.textContent));
+          r.laxButtons = (selected = { t: 'p', id: S.roster.find(p => compute()[p.id].onBand === 'MID').id, kind: 'field' }, render(),
+            [...document.querySelectorAll('#v-field [data-ev]')].map(b => b.textContent).join(' '));
+          selected = null;
+          /* lineups saved in one sport stay out of another's list */
+          S.lineups = []; saveLineup('lax lineup');
+          r.laxLineups = sportLineups().length;
+          applyPreset(S, 'soccer'); r.soccerLineups = sportLineups().length;
+          S.lineups = []; S.settings.advanced = false; S.game = newGame(); invalidate(); render();
+          return r; })()""")
+        check("a field hockey green card is two minutes off", cards["greenOff"] and cards["greenBack"], str(cards))
+        check("lacrosse warns when attack is short, and has GB and Penalty buttons",
+              cards["offside"] and cards["laxButtons"] == "Goal Assist Shot GB Penalty", str(cards))
+        check("saved lineups stay with their sport", cards["laxLineups"] == 1 and cards["soccerLineups"] == 0, str(cards))
+
+        pick = pg.evaluate("""async () => {
+          const r = {};
+          activeTab = 'setup'; S.game = newGame(); invalidate(); render();
+          r.options = document.querySelectorAll('#s-sport option').length;
+          push([{ type: 'NOTE', note: 'kickoff' }]); render();
+          r.lockedMidGame = document.getElementById('s-sport').disabled;
+          S.game = newGame(); invalidate(); render();
+          const before = TEAMS.list.length;
+          await addTeam('Rink Rats', null, 'hockey');
+          r.added = TEAMS.list.length === before + 1 && activeTeam().name === 'Rink Rats' && S.settings.sport === 'hockey' && S.settings.teamSize === 6;
+          activeTab = 'setup'; render();
+          r.tips = [...document.querySelectorAll('#v-setup [data-tog]')].filter(b => !b.closest('.row').querySelector('.tipbtn')).map(b => b.dataset.tog)
+            .concat([...document.querySelectorAll('#v-setup label.field')].filter(l => !l.querySelector('.tipbtn')).map(l => l.textContent.slice(0, 20)));
+          r.overflow = [];
+          for (const pr of ['hockey', 'basketball', 'lax-girls', 'fieldhockey']) {
+            applyPreset(S, pr); S.settings.advanced = true;
+            S.roster = Array.from({ length: S.settings.teamSize + 4 }, (_, i) => ({ id: 'o' + i, name: 'Player ' + i, number: String(i + 1), photo: null, avail: 'available', elig: Object.assign(newElig(), { GK: true }) }));
+            S.game = newGame(); invalidate(); S.game.next = null; autoFillNext(); push(planDiff());
+            for (const t of ['field', 'next', 'times', 'roster', 'setup', 'help']) {
+              activeTab = t; render();
+              if (document.documentElement.scrollWidth > document.documentElement.clientWidth) r.overflow.push(pr + ':' + t);
+            }
+            activeTab = 'setup'; render();
+            r.tips = r.tips.concat([...document.querySelectorAll('#v-setup [data-tog]')].filter(b => !b.closest('.row').querySelector('.tipbtn')).map(b => pr + ':' + b.dataset.tog));
+          }
+          S.settings.advanced = false; activeTab = 'field'; render();
+          await switchTeam(TEAMS.list[0].id);
+          return r; }""")
+        check("the sport picker lists every preset and locks mid-game", pick["options"] == 10 and pick["lockedMidGame"], str(pick))
+        check("a new team can start as a hockey team", pick["added"], str(pick))
+        check("every sport's settings have a ? explanation", not pick["tips"], str(pick["tips"]))
+        check("no sport overflows sideways", not pick["overflow"], str(pick["overflow"]))
+
+        # ---------------------------------------------------------------
         section("Persistence")
         pg.evaluate("Store.save(S)")
         pg.wait_for_timeout(300)

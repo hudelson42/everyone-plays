@@ -5,8 +5,9 @@ storage keys (`sideline-tracker-v1`, `sideline-teams-v1`, `sideline-team-*`),
 the service worker cache, and the `sideline: "backup"` marker in backup files.
 Renaming the storage keys would strand every existing save. Leave them alone.
 
-A substitution and playing-time tracker for youth soccer coaches. Single-page
-app, no build step, no dependencies, no server, no accounts.
+A substitution and playing-time tracker for youth sports coaches: soccer (and
+futsal), field hockey, lacrosse, ice hockey and basketball. Single-page app, no
+build step, no dependencies, no server, no accounts.
 
 `HISTORY.md` has the full decision log, the data schema in detail, and the list
 of bugs found so far with how each was caught. Read it before changing anything
@@ -60,6 +61,42 @@ minutes just quietly go wrong. Hence the invariants below.
   Games logged before positions existed have none; `fieldLayout()` seats those
   players in the first open slot of their band. Always go through
   `fieldLayout()` / `whereOn()` for "who is where", never `onBand` alone.
+
+## Sports
+
+Every sport uses the same four band keys in the log — `GK`, `DEF`, `MID`, `FWD`,
+back to front — so the time model, auto-fill, undo and history never know the
+sport. **Never add sport-specific band keys.** A sport lives in `SPORTS`:
+row names (`bandName`, `bandShort`, `bandLetter`, `csvBand`), which bands it uses
+(`bands`), positions (`posdef`, `special`), `formations`, `sizes`, Advanced stat
+buttons (`events`) and opponent buttons (`opp`), and words (`surface`, `tab`,
+`period`). `sportDef()` returns the team's sport and rebuilds `BANDNAME`,
+`POSNAME` and `POSORDER` when it changes; always go through it, `sportBands()`,
+`posCodes()` and `formation()`. `PRESETS` apply a sport's usual format and timing.
+
+- The sport is per team (`S.settings.sport`, default soccer) and changes only
+  between games. Lineups carry `sport` and other sports' are hidden
+  (`sportLineups()`); archived games carry `sport` and the season only adds up
+  this sport's (`sameSport`).
+- **Soccer must look and read exactly as before.** Soccer keeps its own wording
+  in the season stats, CSV and score pop-up; other sports use `STATDEFS` and
+  `openScore()`. The existing tests pin soccer.
+- **Hockey rotates lines** (`usesLines()`, `autoFillLines()`, `S.lines`,
+  `openLines()`, `buildLines()`): the line and pair with the least average
+  time go out, the goalie stays, holes go to the least-played skater off the
+  ice. `mixLines` hands back to `autoFillNext()`. Shifts are set in seconds.
+- Timed suspensions (`timedPenalties()`): soccer's sin bin is optional; field
+  hockey's cards (green 2 min) and lacrosse and hockey `PEN` events (with
+  `secs`, served back to back) always sit the player out. Basketball foul-out
+  (`foulOut`, `foulLimit`) makes a player unavailable like a red card.
+- Goalie eligibility starts unticked outside soccer (`SPORTS[x].elig`). That
+  exposed a greedy-placement bug: with two kids ticked for goal and the goalie
+  held, auto-fill used both outfield and put an unticked kid in goal. Placement
+  now refuses any pairing that lowers how many incoming players can still go
+  somewhere eligible (`maxEligible` in `autoFillNext()`). With everyone eligible
+  nothing is refused, so soccer's results are unchanged.
+- Lacrosse shows an offside reminder when defense or attack is short; it
+  doesn't block.
 
 ## Invariants — these must hold
 
